@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"flag"
 	"fmt"
 	"golang.org/x/crypto/ssh/terminal"
+	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -14,7 +17,7 @@ import (
 
 type Point struct {
 	X, Y, W float64 // x, y, and wavelength
-	DX, DY  float64 // x and y velocity of point
+	DX, DY  float64 // x and y velocity/displacement of point
 }
 
 type Interferer struct {
@@ -31,18 +34,10 @@ func New(points int) Interferer {
 
 func (p *Point) Move() {
 	p.X, p.Y = func() (float64, float64) {
-		/*
-			if p.X+p.DX < 0 || p.X+p.DX > 1.0 {
-				p.DX *= -1
-			}
-			if p.Y+p.DY < 0 || p.Y+p.DY > 1.0 {
-				p.DY *= -1
-			}
-		*/
-
 		p.X += p.DX
 		p.Y += p.DY
 
+		// if a point moves off of our grid, wrap it around to the other side.
 		switch {
 		case p.X < 0:
 			p.X += 1.0
@@ -114,8 +109,20 @@ func full_spectrum(z, min_z, max_z float64) (byte, byte, byte) {
 	return byte(r * 255.0), byte(g * 255.0), byte(b * 255.0)
 }
 
-func ForegroundRGB(s string, r, g, b byte) string {
-	return "\x1b[38;2;" + strconv.Itoa(int(r)) + ";" + strconv.Itoa(int(b)) + ";" + strconv.Itoa(int(g)) + "m" + s
+func ForegroundRGB(buf *bytes.Buffer, s byte, r, g, b byte) {
+	buf.Write([]byte("\x1b[38;2;"))
+	buf.Write([]byte(strconv.Itoa(int(r))))
+	buf.Write([]byte{';'})
+	buf.Write([]byte(strconv.Itoa(int(b))))
+	buf.Write([]byte{';'})
+	buf.Write([]byte(strconv.Itoa(int(g))))
+	buf.Write([]byte{'m'})
+	buf.Write([]byte{s})
+}
+
+func (intf *Interferer) Render(w, h int) {
+	intf.Update()
+	intf.Draw(w, h)
 }
 
 func (intf *Interferer) Draw(w, h int) {
@@ -124,7 +131,13 @@ func (intf *Interferer) Draw(w, h int) {
 	gmax := -math.MaxFloat64
 	gmin := math.MaxFloat64
 
+	b := []byte{}
+
+	buf := bytes.NewBuffer(b)
+
+	// move cursor to upper left hand corner.
 	fmt.Printf("\x1b[%d;%df", 1, 1)
+
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			a := x + y*w // x + y * stride
@@ -145,21 +158,19 @@ func (intf *Interferer) Draw(w, h int) {
 			}
 
 			r, g, b := full_spectrum(grid[a], gmin, gmax)
-			// fmt.Printf("x = %d, y = %d, a = %d, %v,%v,%v\n", x, y, a, r, g, b)
-			// fmt.Printf("%s", ForegroundRGB("◼", r, g, b))
-			fmt.Printf("%s", ForegroundRGB(".", r, g, b))
+			ForegroundRGB(buf, '.', r, g, b)
 		}
 	}
+	io.Copy(os.Stdout, buf)
 }
 
 func (intf *Interferer) Init(points int) {
 	for i := 0; i < points; i++ {
-		intf.Point = append(intf.Point, Point{X: rand.Float64(), Y: rand.Float64(), W: rand.Float64() * .5, DX: (rand.Float64() - .5) * .02, DY: (rand.Float64() - .5) * .02})
+		intf.Point = append(intf.Point, Point{X: rand.Float64(), Y: rand.Float64(), W: rand.Float64() * .2, DX: (rand.Float64() - .5) * .01, DY: (rand.Float64() - .5) * .01})
 	}
 }
 
 func main() {
-
 	rand.Seed(time.Now().Unix())
 	winch := make(chan os.Signal)
 
@@ -167,18 +178,17 @@ func main() {
 
 	w, h, _ := terminal.GetSize(0)
 
-	i := 0
+	points := flag.Int("points", 10, "Number of points to plot.")
+	flag.Parse()
 
-	intf := New(3)
+	intf := New(*points)
 
 	for {
 		select {
 		case <-winch:
 			w, h, _ = terminal.GetSize(0)
-			i++
 		case <-time.Tick(10 * time.Millisecond):
-			intf.Update()
-			intf.Draw(w, h)
+			intf.Render(w, h)
 		}
 	}
 }
