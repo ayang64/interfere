@@ -136,6 +136,7 @@ func (intf *Interferer) Draw(w, h int) {
 
 	// move cursor to upper left hand corner.
 	fmt.Printf("\x1b[%d;%df", 0, 0)
+	var prev float64
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -156,8 +157,14 @@ func (intf *Interferer) Draw(w, h int) {
 				gmin = grid[a]
 			}
 
-			r, g, b := full_spectrum(grid[a], gmin, gmax)
-			ForegroundRGB(buf, '*', r, g, b)
+			// lets not set the color if we don't have to.
+			if grid[a] != prev {
+				r, g, b := full_spectrum(grid[a], gmin, gmax)
+				ForegroundRGB(buf, '*', r, g, b)
+				prev = grid[a]
+			} else {
+				buf.Write([]byte{'*'})
+			}
 		}
 	}
 	io.Copy(os.Stdout, buf)
