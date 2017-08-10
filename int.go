@@ -105,9 +105,9 @@ func full_spectrum(z, min_z, max_z float64) (byte, byte, byte) {
 	return byte(r * 255.0), byte(g * 255.0), byte(b * 255.0)
 }
 
-func ForegroundRGB(buf *bytes.Buffer, s byte, r, g, b byte) {
-	buf.Write([]byte("\x1b[38;2;"))
-	buf.Write([]byte{r, ';', b, ';', g, 'm', s})
+func ForegroundRGB(buf *bytes.Buffer, s string, r, g, b byte) {
+	f := fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s", r, g, b, s)
+	buf.Write([]byte(f))
 }
 
 func (intf *Interferer) Render(w, h int) {
@@ -151,7 +151,7 @@ func (intf *Interferer) Draw(w, h int) {
 			// lets not set the color if we don't have to.
 			if grid[a] != prev {
 				r, g, b := full_spectrum(grid[a], gmin, gmax)
-				ForegroundRGB(buf, '*', r, g, b)
+				ForegroundRGB(buf, "*", r, g, b)
 				prev = grid[a]
 			} else {
 				buf.Write([]byte{'*'})
