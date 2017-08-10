@@ -185,8 +185,8 @@ func (intf *Interferer) Init(points int) {
 func main() {
 	rand.Seed(time.Now().Unix())
 
-	winch := make(chan os.Signal)
-	signal.Notify(winch, syscall.SIGWINCH)
+	sigs := make(chan os.Signal)
+	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGINT)
 
 	w, h, _ := terminal.GetSize(0)
 
@@ -195,12 +195,21 @@ func main() {
 
 	intf := New(*points)
 
+mainloop:
 	for {
 		select {
-		case <-winch:
-			w, h, _ = terminal.GetSize(0)
+		case sig := <-sigs:
+			fmt.Printf("sig: %s\n", sig)
+			switch sig {
+			case syscall.SIGWINCH:
+				w, h, _ = terminal.GetSize(0)
+			case syscall.SIGINT:
+				break mainloop
+			}
 		case <-time.Tick(10 * time.Millisecond):
 			intf.Render(w, h)
 		}
 	}
+	// reset terminal on exit.
+	fmt.Printf("\x1bc;")
 }
