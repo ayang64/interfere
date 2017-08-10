@@ -80,8 +80,6 @@ func full_spectrum(z, min_z, max_z float64) (byte, byte, byte) {
 		g = 0
 		r = -1.0 * (wl - 440.0) / (440.0 - 380.0)
 		b = 1.0
-	case wl < 440.0:
-		r, g, b = 0.0, 0.0, 0.0 // Should never happen
 	case wl <= 490.0:
 		r = 0.0
 		g = (wl - 440.0) / (490.0 - 440.0)
