@@ -37,7 +37,8 @@ func (p *Point) Move() {
 		p.X += p.DX
 		p.Y += p.DY
 
-		// if a point moves off of our grid, wrap it around to the other side.
+		// if a point moves off of our grid, wrap it around to the other
+		// side.  i'm not sure if i like this better than bouncing.
 		switch {
 		case p.X < 0:
 			p.X += 1.0
@@ -134,7 +135,7 @@ func (intf *Interferer) Draw(w, h int) {
 	buf := bytes.NewBuffer(b)
 
 	// move cursor to upper left hand corner.
-	fmt.Printf("\x1b[%d;%df", 1, 1)
+	fmt.Printf("\x1b[%d;%df", 0, 0)
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -156,7 +157,7 @@ func (intf *Interferer) Draw(w, h int) {
 			}
 
 			r, g, b := full_spectrum(grid[a], gmin, gmax)
-			ForegroundRGB(buf, '.', r, g, b)
+			ForegroundRGB(buf, '*', r, g, b)
 		}
 	}
 	io.Copy(os.Stdout, buf)
@@ -164,14 +165,20 @@ func (intf *Interferer) Draw(w, h int) {
 
 func (intf *Interferer) Init(points int) {
 	for i := 0; i < points; i++ {
-		intf.Point = append(intf.Point, Point{X: rand.Float64(), Y: rand.Float64(), W: rand.Float64() * .2, DX: (rand.Float64() - .5) * .01, DY: (rand.Float64() - .5) * .01})
+		intf.Point = append(intf.Point,
+			Point{
+				X:  rand.Float64(),
+				Y:  rand.Float64(),
+				W:  rand.Float64() * .2,
+				DX: (rand.Float64() - .5) * .01,
+				DY: (rand.Float64() - .5) * .02})
 	}
 }
 
 func main() {
 	rand.Seed(time.Now().Unix())
-	winch := make(chan os.Signal)
 
+	winch := make(chan os.Signal)
 	signal.Notify(winch, syscall.SIGWINCH)
 
 	w, h, _ := terminal.GetSize(0)
