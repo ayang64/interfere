@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 )
@@ -26,9 +25,7 @@ type Interferer struct {
 
 func New(points int) Interferer {
 	rc := Interferer{}
-
 	rc.Init(points)
-
 	return rc
 }
 
@@ -110,13 +107,7 @@ func full_spectrum(z, min_z, max_z float64) (byte, byte, byte) {
 
 func ForegroundRGB(buf *bytes.Buffer, s byte, r, g, b byte) {
 	buf.Write([]byte("\x1b[38;2;"))
-	buf.Write([]byte(strconv.Itoa(int(r))))
-	buf.Write([]byte{';'})
-	buf.Write([]byte(strconv.Itoa(int(b))))
-	buf.Write([]byte{';'})
-	buf.Write([]byte(strconv.Itoa(int(g))))
-	buf.Write([]byte{'m'})
-	buf.Write([]byte{s})
+	buf.Write([]byte{r, ';', b, ';', g, 'm', s})
 }
 
 func (intf *Interferer) Render(w, h int) {
