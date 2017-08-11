@@ -1,5 +1,9 @@
-// for best results, run in a local terminal that supports 256 colors -- not
-// over ssh -- and without a multiplexer like screen or tmux.
+/*
+	for best results, run in a local terminal that supports 256 colors -- not
+	over ssh -- and without a multiplexer like screen or tmux.
+
+	© ayan george <ayan@ayan.net> - 2017
+*/
 package main
 
 import (
@@ -34,7 +38,7 @@ func generatePoints(points int) []Point {
 	rc := []Point{}
 
 	// the actual coordinates we use are floats and we're bouncing the points
-	// around a 1.0 x 1.0 grid.  later we translate this grid to terminal
+	// around a 1.0 x 1.0 field.  later we translate this grid to terminal
 	// coordinates.
 	for i := 0; i < points; i++ {
 		rc = append(rc,
@@ -62,14 +66,14 @@ func New(points int, cmapname string, char []byte) (*Interferer, error) {
 		"grey":    MapGrey,
 	}
 
-	m, exists := colmap[cmapname]
+	mappingfunc, exists := colmap[cmapname]
 
 	if exists == false {
 		return nil, fmt.Errorf("%s is not the name of a valid color mapping function.", cmapname)
 	}
 
 	rc := &Interferer{
-		ColorMapFunc: m,
+		ColorMapFunc: mappingfunc,
 		Point:        generatePoints(points),
 		Char:         char,
 		Buffer:       bytes.NewBuffer([]byte{}),
@@ -79,28 +83,24 @@ func New(points int, cmapname string, char []byte) (*Interferer, error) {
 }
 
 func (p *Point) Move() {
-	p.X, p.Y = func() (float64, float64) {
-		p.X += p.DX
-		p.Y += p.DY
+	p.X += p.DX
+	p.Y += p.DY
 
-		// if a point moves off of our grid, wrap it around to the other
-		// side.  i'm not sure if i like this better than bouncing.
-		switch {
-		case p.X < 0:
-			p.X += 1.0
-		case p.X > 1.0:
-			p.X -= 1.0
-		}
+	// if a point moves off of our grid, wrap it around to the other
+	// side.  i'm not sure if i like this better than bouncing.
+	switch {
+	case p.X < 0:
+		p.X += 1.0
+	case p.X > 1.0:
+		p.X -= 1.0
+	}
 
-		switch {
-		case p.Y < 0:
-			p.Y += 1.0
-		case p.Y > 1.0:
-			p.Y -= 1.0
-		}
-
-		return p.X + p.DX, p.Y + p.DY
-	}()
+	switch {
+	case p.Y < 0:
+		p.Y += 1.0
+	case p.Y > 1.0:
+		p.Y -= 1.0
+	}
 }
 
 func (intf *Interferer) Update() {
@@ -195,7 +195,7 @@ func (intf *Interferer) Draw(w, h int) {
 
 	// prepend escape code to move cursor to upper left hand corner to the
 	// beginning of our output buffer.
-	intf.Buffer.Write([]byte("\x1b[1;1f"))
+	intf.Buffer.Write([]byte("\x1b[;f"))
 
 	// prime gmin and gmax with ±infinity. by the end of the loops below they
 	// will contain the minimum and maximum value set in our output grid.  we fit
@@ -203,13 +203,13 @@ func (intf *Interferer) Draw(w, h int) {
 	gmax := math.Inf(-1)
 	gmin := math.Inf(1)
 
-	// store a float version of the widh and height to avoid type conversion inside
-	// our loop.  i'm not even sure if this helps -- maybe the compiler might be smart
-	// enough to do this itself. *shrug*
+	// store a float version of the widh and height to avoid type conversion
+	// inside our loop.  i'm not even sure if this helps -- maybe the compiler is
+	// smart enough to do this itself. *shrug*
 	fw, fh := float64(w), float64(h)
 
 	// our main loop.  SUBTLE: pr, pg, and pb are declared in this loop because
-	// we don't need it outide of that scope.
+	// we don't need them outide of that scope.
 	for y, pr, pg, pb := 0, byte(0), byte(0), byte(0); y < h; y++ {
 		for x := 0; x < w; x++ {
 			a := x + y*w // position in array is x + y * stride
@@ -229,12 +229,13 @@ func (intf *Interferer) Draw(w, h int) {
 			// map current value to a color.
 			r, g, b := intf.ColorMapFunc(grid[a], gmin, gmax)
 
-			// lets not set the color if we don't have to.
+			// lets not set the color if we don't need to.
 			//
 			// we've stored the previous r, g, b values in pr, pg, pb (previous-r,
-			// etc...).  if the new ones match the previous, we just append a
-			// character to our output buffer.  otherwise, we append the escape
-			// characters to set the color *and* the new character.
+			// etc...).  if the new ones match the previous, we simply append a
+			// character to our output buffer as the color is already what we want.
+			// otherwise, we append escape characters to set the color *and* the new
+			// character.
 			if pr == r && pg == g && pb == b {
 				intf.Buffer.Write(intf.Char)
 			} else {
@@ -243,15 +244,13 @@ func (intf *Interferer) Draw(w, h int) {
 			}
 		}
 	}
+
+	// at this point we should have a colorful buffer to push to the terminal!
+	// lets copy it to os.Stdout.
 	io.Copy(os.Stdout, intf.Buffer)
 }
 
 func main() {
-	rand.Seed(time.Now().Unix())
-
-	sigs := make(chan os.Signal)
-	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGINT)
-
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
 	char := flag.String("char", " ", "Character to print in each 'pixel'. ")
 	points := flag.Int("points", 10, "Number of points to plot.")
@@ -263,8 +262,15 @@ func main() {
 		log.Fatalf("error: %s", err)
 	}
 
+	// handle sigwinch and sigint
+	sigs := make(chan os.Signal)
+	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGINT)
+
 	// prime our temrminal size.
 	w, h, _ := terminal.GetSize(0)
+
+	rand.Seed(time.Now().Unix())
+
 mainloop:
 	for {
 		select {
