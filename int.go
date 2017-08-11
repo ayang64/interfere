@@ -122,7 +122,6 @@ func (intf *Interferer) Draw(w, h int) {
 	gmin := math.MaxFloat64
 
 	b := []byte{}
-
 	buf := bytes.NewBuffer(b)
 
 	// move cursor to upper left hand corner.
@@ -131,7 +130,7 @@ func (intf *Interferer) Draw(w, h int) {
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
-			a := x + y*w // x + y * stride
+			a := x + y*w // position in array is x + y * stride
 			grid[a] = 0.0
 			var v float64
 			for _, p := range intf.Point {
@@ -191,7 +190,6 @@ mainloop:
 	for {
 		select {
 		case sig := <-sigs:
-			fmt.Printf("sig: %s\n", sig)
 			switch sig {
 			case syscall.SIGWINCH:
 				w, h, _ = terminal.GetSize(0)
