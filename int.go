@@ -17,34 +17,50 @@ import (
 
 type Point struct {
 	X, Y, W float64 // x, y, and wavelength
-	DX, DY  float64 // x and y velocity/displacement of point
+	DX, DY  float64 // x and y displacement
 }
 
-type MapFunc func(float64, float64, float64) (byte, byte, byte)
+type ColorMapFunc func(float64, float64, float64) (byte, byte, byte)
 type Interferer struct {
-	MapColor MapFunc
-	Point    []Point
+	ColorMapFunc
+	Point []Point
 }
 
-func New(points int, cmapname string) Interferer {
-	rc := Interferer{}
+func generatePoints(points int) []Point {
+	rc := []Point{}
+	for i := 0; i < points; i++ {
+		rc = append(rc,
+			Point{
+				X:  rand.Float64(),
+				Y:  rand.Float64(),
+				W:  rand.Float64() * .2,
+				DX: (rand.Float64() - .5) * .01,
+				DY: (rand.Float64() - .5) * .02})
+	}
+	return rc
+}
 
-	colmap := map[string]MapFunc{
+// builds and returns a new Interferer
+func New(points int, cmapname string) (Interferer, error) {
+	colmap := map[string]ColorMapFunc{
 		"roygbiv": MapRoygbiv,
 		"red":     MapRed,
+		"bluered": MapBlueRed,
 		"grey":    MapGrey,
 	}
 
 	m, exists := colmap[cmapname]
 
 	if exists == false {
-		log.Fatal("Must supply a valid color mapper.")
+		return Interferer{}, fmt.Errorf("%s is not the name of a valid color mapping function.", cmapname)
 	}
 
-	rc.MapColor = m
+	rc := Interferer{
+		ColorMapFunc: m,
+		Point:        generatePoints(points),
+	}
 
-	rc.Init(points)
-	return rc
+	return rc, nil
 }
 
 func (p *Point) Move() {
@@ -76,17 +92,22 @@ func (intf *Interferer) Update() {
 	for i := range intf.Point {
 		intf.Point[i].Move()
 	}
-
 }
+
+func MapBlueRed(z, min_z, max_z float64) (byte, byte, byte) {
+	zrange := max_z - min_z
+	absz := z - min_z
+	wl := absz / zrange
+	b := byte(wl * 255.0)
+	return b, 0, 255 - b
+}
+
 func MapRed(z, min_z, max_z float64) (byte, byte, byte) {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
-
 	b := byte(wl * 255.0)
-
-	return b, 0, 255 - b
-
+	return b, 0, 0
 }
 
 func MapGrey(z, min_z, max_z float64) (byte, byte, byte) {
@@ -140,13 +161,11 @@ func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
 	default:
 		r, g, b = 0.0, 0.0, 0.0 // Should never happen
 	}
-
 	return byte(r * 255.0), byte(g * 255.0), byte(b * 255.0)
 }
 
-func ForegroundRGB(buf *bytes.Buffer, s string, r, g, b byte) {
-	f := fmt.Sprintf("\x1b[48;2;%d;%d;%dm%s", r, g, b, s)
-	buf.Write([]byte(f))
+func SetForegroundRGB(s string, r, g, b byte) []byte {
+	return []byte(fmt.Sprintf("\x1b[48;2;%d;%d;%dm%s", r, g, b, s))
 }
 
 func (intf *Interferer) Render(w, h int) {
@@ -160,14 +179,14 @@ func (intf *Interferer) Draw(w, h int) {
 	gmax := -math.MaxFloat64
 	gmin := math.MaxFloat64
 
-	// try to allocate as close to our needed size up front.
-	// each point generated could require up to 22 characters + 6 for
-	// the cursor movement escape characters
+	// try to allocate as close to our needed size up front.  each point
+	// generated could require up to 22 characters + 6 for the cursor movement
+	// escape characters
 	bs := make([]byte, (w*h*22)+6)
 	buf := bytes.NewBuffer(bs)
 
-	// put escape code to move cursor to upper left hand corner at the beginning of our
-	// output buffer.
+	// put escape code to move cursor to upper left hand corner at the beginning
+	// of our output buffer.
 	buf.Write([]byte("\x1b[1;1f"))
 	var pr, pg, pb, r, g, b byte
 
@@ -189,28 +208,16 @@ func (intf *Interferer) Draw(w, h int) {
 			}
 
 			// lets not set the color if we don't have to.
-			r, g, b = intf.MapColor(grid[a], gmin, gmax)
+			r, g, b = intf.ColorMapFunc(grid[a], gmin, gmax)
 			if pr == r && pg == g && pb == b {
 				buf.Write([]byte{' '})
 			} else {
 				pr, pg, pb = r, g, b
-				ForegroundRGB(buf, " ", r, g, b)
+				buf.Write(SetForegroundRGB(" ", r, g, b))
 			}
 		}
 	}
 	io.Copy(os.Stdout, buf)
-}
-
-func (intf *Interferer) Init(points int) {
-	for i := 0; i < points; i++ {
-		intf.Point = append(intf.Point,
-			Point{
-				X:  rand.Float64(),
-				Y:  rand.Float64(),
-				W:  rand.Float64() * .2,
-				DX: (rand.Float64() - .5) * .01,
-				DY: (rand.Float64() - .5) * .02})
-	}
 }
 
 func main() {
@@ -225,7 +232,11 @@ func main() {
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, grey, and blue.")
 	flag.Parse()
 
-	intf := New(*points, *cmap)
+	intf, err := New(*points, *cmap)
+
+	if err != nil {
+		log.Fatal(err)
+	}
 
 mainloop:
 	for {
