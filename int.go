@@ -135,8 +135,9 @@ func (intf *Interferer) Draw(w, h int) {
 			grid[a] = 0.0
 			var v float64
 			for _, p := range intf.Point {
+				// translate points to terminal 'pixels' or charaters.
 				px := p.X * float64(w)
-				py := p.X * float64(h)
+				py := p.Y * float64(h)
 				v += math.Sin(math.Hypot(px-float64(x), py-float64(y)) * p.W)
 			}
 			grid[a] += v
