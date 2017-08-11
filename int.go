@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"golang.org/x/crypto/ssh/terminal"
 	"io"
+	"log"
 	"math"
 	"math/rand"
 	"os"
@@ -19,12 +20,29 @@ type Point struct {
 	DX, DY  float64 // x and y velocity/displacement of point
 }
 
+type MapFunc func(float64, float64, float64) (byte, byte, byte)
 type Interferer struct {
-	Point []Point
+	MapColor MapFunc
+	Point    []Point
 }
 
-func New(points int) Interferer {
+func New(points int, cmapname string) Interferer {
 	rc := Interferer{}
+
+	colmap := map[string]MapFunc{
+		"roygbiv": MapRoygbiv,
+		"red":     MapRed,
+		"grey":    MapGrey,
+	}
+
+	m, exists := colmap[cmapname]
+
+	if exists == false {
+		log.Fatal("Must supply a valid color mapper.")
+	}
+
+	rc.MapColor = m
+
 	rc.Init(points)
 	return rc
 }
@@ -58,12 +76,33 @@ func (intf *Interferer) Update() {
 	for i := range intf.Point {
 		intf.Point[i].Move()
 	}
+
+}
+func MapRed(z, min_z, max_z float64) (byte, byte, byte) {
+	zrange := max_z - min_z
+	absz := z - min_z
+	wl := absz / zrange
+
+	b := byte(wl * 255.0)
+
+	return b, 0, 255 - b
+
+}
+
+func MapGrey(z, min_z, max_z float64) (byte, byte, byte) {
+	zrange := max_z - min_z
+	absz := z - min_z
+	wl := absz / zrange
+
+	b := byte(wl * 255.0)
+
+	return b, b, b
 }
 
 // from http://www.physics.sfasu.edu/astro/color/spectra.html
 // scale value to color between 380nm and 780nm
-func full_spectrum(z, min_z, max_z float64) (byte, byte, byte) {
-	zrange := float64(max_z) - min_z
+func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
+	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
 
@@ -75,16 +114,16 @@ func full_spectrum(z, min_z, max_z float64) (byte, byte, byte) {
 	case wl < 380.0:
 		r, g, b = 0.0, 0.0, 0.0
 	case wl <= 440.0:
-		g = 0
 		r = -1.0 * (wl - 440.0) / (440.0 - 380.0)
+		g = 0
 		b = 1.0
 	case wl <= 490.0:
 		r = 0.0
 		g = (wl - 440.0) / (490.0 - 440.0)
 		b = 1.0
 	case wl <= 510.0:
-		g = 1.0
 		r = 0.0
+		g = 1.0
 		b = -1.0 * (wl - 510.0) / (510.0 - 490.0)
 	case wl <= 580.0:
 		r = (wl - 510.0) / (580.0 - 510.0)
@@ -121,25 +160,26 @@ func (intf *Interferer) Draw(w, h int) {
 	gmax := -math.MaxFloat64
 	gmin := math.MaxFloat64
 
-	b := []byte{}
-	buf := bytes.NewBuffer(b)
+	// try to allocate as close to our needed size up front.
+	// each point generated could require up to 22 characters + 6 for
+	// the cursor movement escape characters
+	bs := make([]byte, (w*h*22)+6)
+	buf := bytes.NewBuffer(bs)
 
-	// move cursor to upper left hand corner.
-	fmt.Printf("\x1b[%d;%df", 0, 0)
-	var prev float64
+	// put escape code to move cursor to upper left hand corner at the beginning of our
+	// output buffer.
+	buf.Write([]byte("\x1b[1;1f"))
+	var pr, pg, pb, r, g, b byte
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			a := x + y*w // position in array is x + y * stride
-			grid[a] = 0.0
-			var v float64
+
 			for _, p := range intf.Point {
-				// translate points to terminal 'pixels'/charaters.
-				px := p.X * float64(w)
-				py := p.Y * float64(h)
-				v += math.Sin(math.Hypot(px-float64(x), py-float64(y)) * p.W)
+				px := p.X*float64(w) - float64(x)
+				py := p.Y*float64(h) - float64(y)
+				grid[a] += math.Sin(math.Hypot(px, py) * p.W)
 			}
-			grid[a] += v
 
 			if grid[a] > gmax {
 				gmax = grid[a]
@@ -149,12 +189,12 @@ func (intf *Interferer) Draw(w, h int) {
 			}
 
 			// lets not set the color if we don't have to.
-			if grid[a] == prev {
+			r, g, b = intf.MapColor(grid[a], gmin, gmax)
+			if pr == r && pg == g && pb == b {
 				buf.Write([]byte{' '})
 			} else {
-				r, g, b := full_spectrum(grid[a], gmin, gmax)
+				pr, pg, pb = r, g, b
 				ForegroundRGB(buf, " ", r, g, b)
-				prev = grid[a]
 			}
 		}
 	}
@@ -182,9 +222,10 @@ func main() {
 	w, h, _ := terminal.GetSize(0)
 
 	points := flag.Int("points", 10, "Number of points to plot.")
+	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, grey, and blue.")
 	flag.Parse()
 
-	intf := New(*points)
+	intf := New(*points, *cmap)
 
 mainloop:
 	for {
