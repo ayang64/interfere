@@ -1,5 +1,5 @@
-// for best results, run in a local terminal (not over ssh) and without a
-// multiplexer like screen or tmux.
+// for best results, run in a local terminal that supports 256 colors -- not
+// over ssh -- and without a multiplexer like screen or tmux.
 package main
 
 import (
@@ -47,6 +47,10 @@ func generatePoints(points int) []Point {
 
 // builds and returns a new Interferer
 func New(points int, cmapname string, char []byte) (*Interferer, error) {
+	if len(char) == 0 {
+		return nil, fmt.Errorf("char slice must be at least 1 byte long!")
+	}
+
 	colmap := map[string]ColorMapFunc{
 		"roygbiv": MapRoygbiv,
 		"red":     MapRed,
@@ -164,7 +168,7 @@ func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
 		g = 0.0
 		b = 0.0
 	default:
-		r, g, b = 0.0, 0.0, 0.0 // should never happen
+		r, g, b = 0.0, 0.0, 0.0 // should never happen.  if it does, it means the either min_z or  max_z values are wrong.
 	}
 	return byte(r * 255.0), byte(g * 255.0), byte(b * 255.0)
 }
@@ -181,32 +185,37 @@ func (intf *Interferer) Render(w, h int) {
 func (intf *Interferer) Draw(w, h int) {
 	grid := make([]float64, w*h)
 
-	gmax := -math.MaxFloat64
-	gmin := math.MaxFloat64
-
 	// prepend escape code to move cursor to upper left hand corner to the
 	// beginning of our output buffer.
 	intf.Buffer.Write([]byte("\x1b[1;1f"))
 
 	var pr, pg, pb byte
 
+	// prime gmin and gmax with ±infinity. by the end of the loops below they
+	// will contain the minimum and maximum value set in our output grid.  we fit
+	// the color for each element into a range between gmin and gmax.
+	gmax := math.Inf(-1)
+	gmin := math.Inf(1)
+
+	// store a float version of the widh and height to avoid type conversion inside
+	// our loop.  i'm not even sure if this helps -- maybe the compiler might be smart
+	// enough to do this itself. *shrug*
+	fw, fh := float64(w), float64(h)
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			a := x + y*w // position in array is x + y * stride
 
+			// hoist type conversion of x and y to float64 out of the loop below.
+			fx, fy := float64(x), float64(y)
 			for _, p := range intf.Point {
-				px := p.X*float64(w) - float64(x)
-				py := p.Y*float64(h) - float64(y)
+				px := p.X*fw - fx
+				py := p.Y*fh - fy
 				grid[a] += math.Sin(math.Hypot(px, py) * p.W)
 			}
 
-			if grid[a] > gmax {
-				gmax = grid[a]
-			}
-
-			if grid[a] < gmin {
-				gmin = grid[a]
-			}
+			// update max and min values seen so far
+			gmax = math.Max(grid[a], gmax)
+			gmin = math.Min(grid[a], gmin)
 
 			// map value to color.
 			r, g, b := intf.ColorMapFunc(grid[a], gmin, gmax)
@@ -234,19 +243,19 @@ func main() {
 	sigs := make(chan os.Signal)
 	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGINT)
 
-	w, h, _ := terminal.GetSize(0)
-
-	points := flag.Int("points", 10, "Number of points to plot.")
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
 	char := flag.String("char", " ", "Character to print in each 'pixel'. ")
+	points := flag.Int("points", 10, "Number of points to plot.")
 	flag.Parse()
 
 	intf, err := New(*points, *cmap, []byte(*char))
 
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("error: %s", err)
 	}
 
+	// prime our temrminal size.
+	w, h, _ := terminal.GetSize(0)
 mainloop:
 	for {
 		select {
