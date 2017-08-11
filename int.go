@@ -142,6 +142,8 @@ func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
 
 	switch {
 	case wl < 380.0:
+		// should never happen.  if it does, it means the either min_z or  max_z
+		// values are wrong.
 		r, g, b = 0.0, 0.0, 0.0
 	case wl <= 440.0:
 		r = -1.0 * (wl - 440.0) / (440.0 - 380.0)
@@ -168,7 +170,9 @@ func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
 		g = 0.0
 		b = 0.0
 	default:
-		r, g, b = 0.0, 0.0, 0.0 // should never happen.  if it does, it means the either min_z or  max_z values are wrong.
+		// should never happen.  if it does, it means the either min_z or  max_z
+		// values are wrong.
+		r, g, b = 0.0, 0.0, 0.0
 	}
 	return byte(r * 255.0), byte(g * 255.0), byte(b * 255.0)
 }
@@ -189,8 +193,6 @@ func (intf *Interferer) Draw(w, h int) {
 	// beginning of our output buffer.
 	intf.Buffer.Write([]byte("\x1b[1;1f"))
 
-	var pr, pg, pb byte
-
 	// prime gmin and gmax with ±infinity. by the end of the loops below they
 	// will contain the minimum and maximum value set in our output grid.  we fit
 	// the color for each element into a range between gmin and gmax.
@@ -201,7 +203,10 @@ func (intf *Interferer) Draw(w, h int) {
 	// our loop.  i'm not even sure if this helps -- maybe the compiler might be smart
 	// enough to do this itself. *shrug*
 	fw, fh := float64(w), float64(h)
-	for y := 0; y < h; y++ {
+
+	// our main loop.  SUBTLE: pr, pg, and pb are declared in this loop because
+	// we don't need it outide of that scope.
+	for y, pr, pg, pb := 0, byte(0), byte(0), byte(0); y < h; y++ {
 		for x := 0; x < w; x++ {
 			a := x + y*w // position in array is x + y * stride
 
@@ -213,17 +218,17 @@ func (intf *Interferer) Draw(w, h int) {
 				grid[a] += math.Sin(math.Hypot(px, py) * p.W)
 			}
 
-			// update max and min values seen so far
+			// update max and min values we've seen so far
 			gmax = math.Max(grid[a], gmax)
 			gmin = math.Min(grid[a], gmin)
 
-			// map value to color.
+			// map current value to a color.
 			r, g, b := intf.ColorMapFunc(grid[a], gmin, gmax)
 
 			// lets not set the color if we don't have to.
 			//
-			// we've stored the previous r, g, b values in pr, pg, pb
-			// (previous-r...).  if the new ones match the previous, we just append a
+			// we've stored the previous r, g, b values in pr, pg, pb (previous-r,
+			// etc...).  if the new ones match the previous, we just append a
 			// character to our output buffer.  otherwise, we append the escape
 			// characters to set the color *and* the new character.
 			if pr == r && pg == g && pb == b {
