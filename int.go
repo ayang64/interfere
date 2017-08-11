@@ -32,6 +32,10 @@ type Interferer struct {
 // return a slice of points primed with sane random values.
 func generatePoints(points int) []Point {
 	rc := []Point{}
+
+	// the actual coordinates we use are floats and we're bouncing the points
+	// around a 1.0 x 1.0 grid.  later we translate this grid to terminal
+	// coordinates.
 	for i := 0; i < points; i++ {
 		rc = append(rc,
 			Point{
