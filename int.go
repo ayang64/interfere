@@ -23,10 +23,10 @@ type Point struct {
 }
 type ColorMapFunc func(float64, float64, float64) (byte, byte, byte)
 type Interferer struct {
-	Char         []byte        // character to print in each cell.
-	Point        []Point       // map of points where ripple originates.
-	ColorMapFunc               // function to call when mapping a cell's value to a color.
-	Buffer       *bytes.Buffer // buffer to store grid that we display
+	Char          []byte  // character to print in each cell.
+	Point         []Point // map of points where ripple originates.
+	ColorMapFunc          // function to call when mapping a cell's value to a color.
+	*bytes.Buffer         // buffer to store grid that we display
 }
 
 // return a slice of points primed with sane random values.
