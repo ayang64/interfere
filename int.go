@@ -2,7 +2,12 @@
 	for best results, run in a local terminal that supports 256 colors -- not
 	over ssh -- and without a multiplexer like screen or tmux.
 
-	© ayan george <ayan@ayan.net> - 2017
+	i noticed francesc ask about terminal colors on twitter.  i decided to try
+	my hand at a terminal based 'demo' that is imspired by some stuff i used to
+	see in my amiga days.
+
+	enjoy!
+	ayan@ayan.net
 */
 package main
 
@@ -27,7 +32,7 @@ type Point struct {
 }
 type ColorMapFunc func(float64, float64, float64) (byte, byte, byte)
 type Interferer struct {
-	Char          []byte  // character to print in each cell.
+	Message       []byte  // characters to print in each cell.
 	Point         []Point // map of points where ripple originates.
 	ColorMapFunc          // function to call when mapping a cell's value to a color.
 	*bytes.Buffer         // buffer to store grid that we display
@@ -54,11 +59,7 @@ func generatePoints(points int) []Point {
 }
 
 // builds and returns a new Interferer
-func New(points int, cmapname string, char []byte) (*Interferer, error) {
-	if len(char) == 0 {
-		return nil, fmt.Errorf("char slice must be at least 1 byte long!")
-	}
-
+func New(points int, cmapname string, message []byte) (*Interferer, error) {
 	colmap := map[string]ColorMapFunc{
 		"roygbiv": MapRoygbiv,
 		"red":     MapRed,
@@ -73,7 +74,7 @@ func New(points int, cmapname string, char []byte) (*Interferer, error) {
 	rc := &Interferer{
 		ColorMapFunc: colmap[cmapname],
 		Point:        generatePoints(points),
-		Char:         char,
+		Message:      message,
 		Buffer:       bytes.NewBuffer([]byte{}),
 	}
 
@@ -222,11 +223,12 @@ func (intf *Interferer) Draw(w, h int) {
 			// character to our output buffer as the color is already what we want.
 			// otherwise, we append escape characters to set the color *and* the new
 			// character.
+			c := []byte{intf.Message[a%len(intf.Message)]}
 			if pr == r && pg == g && pb == b {
-				intf.Buffer.Write(intf.Char)
+				intf.Buffer.Write(c)
 			} else {
 				pr, pg, pb = r, g, b
-				intf.Buffer.Write(SetForegroundRGB(intf.Char, r, g, b))
+				intf.Buffer.Write(SetForegroundRGB(c, r, g, b))
 			}
 		}
 	}
@@ -238,11 +240,11 @@ func (intf *Interferer) Draw(w, h int) {
 
 func main() {
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
-	char := flag.String("char", " ", "Character to print in each 'pixel'. ")
+	message := flag.String("message", " ", "Message to repeat on terminal. ")
 	points := flag.Int("points", 10, "Number of points to plot.")
 	flag.Parse()
 
-	intf, err := New(*points, *cmap, []byte(*char))
+	intf, err := New(*points, *cmap, []byte(*message))
 
 	if err != nil {
 		log.Fatalf("error: %s", err)
