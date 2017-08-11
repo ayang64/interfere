@@ -66,14 +66,12 @@ func New(points int, cmapname string, char []byte) (*Interferer, error) {
 		"grey":    MapGrey,
 	}
 
-	mappingfunc, exists := colmap[cmapname]
-
-	if exists == false {
+	if _, exists := colmap[cmapname]; exists == false {
 		return nil, fmt.Errorf("%s is not the name of a valid color mapping function.", cmapname)
 	}
 
 	rc := &Interferer{
-		ColorMapFunc: mappingfunc,
+		ColorMapFunc: colmap[cmapname],
 		Point:        generatePoints(points),
 		Char:         char,
 		Buffer:       bytes.NewBuffer([]byte{}),
@@ -150,29 +148,17 @@ func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
 		// values are wrong.
 		r, g, b = 0.0, 0.0, 0.0
 	case wl <= 440.0:
-		r = -1.0 * (wl - 440.0) / (440.0 - 380.0)
-		g = 0
-		b = 1.0
+		r, g, b = -1.0*(wl-440.0)/(440.0-380.0), 0.0, 1.0
 	case wl <= 490.0:
-		r = 0.0
-		g = (wl - 440.0) / (490.0 - 440.0)
-		b = 1.0
+		r, g, b = 0.0, (wl-440.0)/(490.0-440.0), 1.0
 	case wl <= 510.0:
-		r = 0.0
-		g = 1.0
-		b = -1.0 * (wl - 510.0) / (510.0 - 490.0)
+		r, g, b = 0.0, 1.0, -1.0*(wl-510.0)/(510.0-490.0)
 	case wl <= 580.0:
-		r = (wl - 510.0) / (580.0 - 510.0)
-		g = 1.0
-		b = 0.0
+		r, g, b = (wl-510.0)/(580.0-510.0), 1.0, 0.0
 	case wl <= 645.0:
-		r = 1.0
-		g = -1 * (wl - 645.0) / (645.0 - 580.0)
-		b = 0.0
+		r, g, b = 1.0, -1*(wl-645.0)/(645.0-580.0), 0.0
 	case wl <= 780.0:
-		r = 1.0
-		g = 0.0
-		b = 0.0
+		r, g, b = 1.0, 0.0, 0.0
 	default:
 		// should never happen.  if it does, it means the either min_z or  max_z
 		// values are wrong.
