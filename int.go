@@ -229,7 +229,7 @@ func main() {
 	w, h, _ := terminal.GetSize(0)
 
 	points := flag.Int("points", 10, "Number of points to plot.")
-	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, grey, and blue.")
+	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
 	flag.Parse()
 
 	intf, err := New(*points, *cmap)
