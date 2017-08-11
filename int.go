@@ -106,7 +106,7 @@ func full_spectrum(z, min_z, max_z float64) (byte, byte, byte) {
 }
 
 func ForegroundRGB(buf *bytes.Buffer, s string, r, g, b byte) {
-	f := fmt.Sprintf("\x1b[38;2;%d;%d;%dm%s", r, g, b, s)
+	f := fmt.Sprintf("\x1b[48;2;%d;%d;%dm%s", r, g, b, s)
 	buf.Write([]byte(f))
 }
 
@@ -135,7 +135,7 @@ func (intf *Interferer) Draw(w, h int) {
 			grid[a] = 0.0
 			var v float64
 			for _, p := range intf.Point {
-				// translate points to terminal 'pixels' or charaters.
+				// translate points to terminal 'pixels'/charaters.
 				px := p.X * float64(w)
 				py := p.Y * float64(h)
 				v += math.Sin(math.Hypot(px-float64(x), py-float64(y)) * p.W)
@@ -150,12 +150,12 @@ func (intf *Interferer) Draw(w, h int) {
 			}
 
 			// lets not set the color if we don't have to.
-			if grid[a] != prev {
-				r, g, b := full_spectrum(grid[a], gmin, gmax)
-				ForegroundRGB(buf, "*", r, g, b)
-				prev = grid[a]
+			if grid[a] == prev {
+				buf.Write([]byte{' '})
 			} else {
-				buf.Write([]byte{'*'})
+				r, g, b := full_spectrum(grid[a], gmin, gmax)
+				ForegroundRGB(buf, " ", r, g, b)
+				prev = grid[a]
 			}
 		}
 	}
