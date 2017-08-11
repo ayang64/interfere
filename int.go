@@ -185,10 +185,11 @@ func (intf *Interferer) Draw(w, h int) {
 	bs := make([]byte, (w*h*22)+6)
 	buf := bytes.NewBuffer(bs)
 
-	// put escape code to move cursor to upper left hand corner at the beginning
-	// of our output buffer.
+	// prepend escape code to move cursor to upper left hand corner to the
+	// beginning of our output buffer.
 	buf.Write([]byte("\x1b[1;1f"))
-	var pr, pg, pb, r, g, b byte
+
+	var pr, pg, pb byte
 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -208,7 +209,7 @@ func (intf *Interferer) Draw(w, h int) {
 			}
 
 			// lets not set the color if we don't have to.
-			r, g, b = intf.ColorMapFunc(grid[a], gmin, gmax)
+			r, g, b := intf.ColorMapFunc(grid[a], gmin, gmax)
 			if pr == r && pg == g && pb == b {
 				buf.Write([]byte{' '})
 			} else {
