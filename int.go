@@ -50,7 +50,7 @@ func generatePoints(points int) []Point {
 			Point{
 				X:  rand.Float64(),
 				Y:  rand.Float64(),
-				W:  rand.Float64() * .2,
+				W:  rand.Float64() * .5,
 				DX: (rand.Float64() - .5) * .01,
 				DY: (rand.Float64() - .5) * .02,
 			})
@@ -113,7 +113,7 @@ func MapBlueRed(z, min_z, max_z float64) (byte, byte, byte) {
 	absz := z - min_z
 	wl := absz / zrange
 	b := byte(wl * 255.0)
-	return b, 0, 255 - b
+	return 0, b, 255 - b
 }
 
 func MapRed(z, min_z, max_z float64) (byte, byte, byte) {
@@ -145,7 +145,7 @@ func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
 
 	switch {
 	case wl < 380.0:
-		// should never happen.  if it does, it means the either min_z or  max_z
+		// should never happen.  if it does, it means the either min_z or max_z
 		// values are wrong.
 		r, g, b = 0.0, 0.0, 0.0
 	case wl <= 440.0:
@@ -161,7 +161,7 @@ func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
 	case wl <= 780.0:
 		r, g, b = 1.0, 0.0, 0.0
 	default:
-		// should never happen.  if it does, it means the either min_z or  max_z
+		// should never happen.  if it does, it means the either min_z or max_z
 		// values are wrong.
 		r, g, b = 0.0, 0.0, 0.0
 	}
@@ -195,9 +195,7 @@ func (intf *Interferer) Draw(w, h int) {
 	// smart enough to do this itself. *shrug*
 	fw, fh := float64(w), float64(h)
 
-	// our main loop.  SUBTLE: pr, pg, and pb are declared in this loop because
-	// we don't need them outide of that scope.
-	for y, pr, pg, pb := 0, byte(0), byte(0), byte(0); y < h; y++ {
+	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			a := x + y*w // position in array is x + y * stride
 
@@ -212,24 +210,28 @@ func (intf *Interferer) Draw(w, h int) {
 			// update max and min values we've seen so far
 			gmax = math.Max(grid[a], gmax)
 			gmin = math.Min(grid[a], gmin)
+		}
+	}
 
-			// map current value to a color.
-			r, g, b := intf.ColorMapFunc(grid[a], gmin, gmax)
+	// our main loop.  SUBTLE: pr, pg, and pb are declared in this loop because
+	// we don't need them outide of that scope.
+	for a, pr, pg, pb := 0, byte(0), byte(0), byte(0); a < len(grid); a++ {
+		// map current value to a color.
+		r, g, b := intf.ColorMapFunc(grid[a], gmin, gmax)
 
-			// lets not set the color if we don't need to.
-			//
-			// we've stored the previous r, g, b values in pr, pg, pb (previous-r,
-			// etc...).  if the new ones match the previous, we simply append a
-			// character to our output buffer as the color is already what we want.
-			// otherwise, we append escape characters to set the color *and* the new
-			// character.
-			c := []byte{intf.Message[a%len(intf.Message)]}
-			if pr == r && pg == g && pb == b {
-				intf.Buffer.Write(c)
-			} else {
-				pr, pg, pb = r, g, b
-				intf.Buffer.Write(SetForegroundRGB(c, r, g, b))
-			}
+		// lets not set the color if we don't need to.
+		//
+		// we've stored the previous r, g, b values in pr, pg, pb (previous-r,
+		// etc...).  if the new ones match the previous, we simply append a
+		// character to our output buffer as the color is already what we want.
+		// otherwise, we append escape characters to set the color *and* the new
+		// character.
+		c := []byte{intf.Message[a%len(intf.Message)]}
+		if pr == r && pg == g && pb == b {
+			intf.Buffer.Write(c)
+		} else {
+			pr, pg, pb = r, g, b
+			intf.Buffer.Write(SetForegroundRGB(c, r, g, b))
 		}
 	}
 
