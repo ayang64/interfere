@@ -195,6 +195,9 @@ func (intf *Interferer) Draw(w, h int) {
 	// smart enough to do this itself. *shrug*
 	fw, fh := float64(w), float64(h)
 
+	// loop through points on screen and add up sin( distance to point[n] ) *
+	// frequency this will make a nice swirly/wavy pattern where the functions
+	// add up constructively. 
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
 			a := x + y*w // position in array is x + y * stride
@@ -213,8 +216,11 @@ func (intf *Interferer) Draw(w, h int) {
 		}
 	}
 
-	// our main loop.  SUBTLE: pr, pg, and pb are declared in this loop because
-	// we don't need them outide of that scope.
+	// map each point in the grid to a color and append characters to our output
+	// bufferr.
+	//
+	// SUBTLE: pr, pg, and pb are declared in this loop because we don't need
+	// them outide of that scope.
 	for a, pr, pg, pb := 0, byte(0), byte(0), byte(0); a < len(grid); a++ {
 		// map current value to a color.
 		r, g, b := intf.ColorMapFunc(grid[a], gmin, gmax)
