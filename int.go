@@ -36,6 +36,7 @@ type Interferer struct {
 	Point         []Point // map of points where ripple originates.
 	ColorMapFunc          // function to call when mapping a cell's value to a color.
 	*bytes.Buffer         // buffer to store grid that we display
+	GoRoutines    int
 }
 
 // return a slice of points primed with sane random values.
@@ -59,7 +60,7 @@ func generatePoints(points int) []Point {
 }
 
 // builds and returns a new Interferer
-func New(points int, cmapname string, message []byte) (*Interferer, error) {
+func New(points int, cmapname string, message []byte, goroutines int) (*Interferer, error) {
 	colmap := map[string]ColorMapFunc{
 		"roygbiv": MapRoygbiv,
 		"red":     MapRed,
@@ -76,6 +77,7 @@ func New(points int, cmapname string, message []byte) (*Interferer, error) {
 		Point:        generatePoints(points),
 		Message:      message,
 		Buffer:       bytes.NewBuffer([]byte{}),
+		GoRoutines:   goroutines,
 	}
 
 	return rc, nil
@@ -173,22 +175,19 @@ func SetForegroundRGB(c []byte, r, g, b byte) []byte {
 }
 
 func (intf *Interferer) Render(w, h int) {
-	intf.Update()   // update point positions
-	intf.Draw(w, h) // compute grid and write it to the screen.
+	intf.Update()                        // update point positions
+	grid, min, max := intf.Compute(w, h) // compute grid and write it to the screen.
+	// _, min, max := intf.Compute(w, h) // compute grid and write it to the screen.
+	//log.Printf("min = %f, max = %f\n", min, max)
+	intf.Draw(w, h, min, max, grid) // compute grid and write it to the screen.
 }
 
-func (intf *Interferer) Draw(w, h int) {
+func (intf *Interferer) Compute(w, h int) ([]float64, float64, float64) {
 	grid := make([]float64, w*h)
 
 	// prepend escape code to move cursor to upper left hand corner to the
 	// beginning of our output buffer.
 	intf.Buffer.Write([]byte("\x1b[;f"))
-
-	// prime gmin and gmax with ±infinity. by the end of the loops below they
-	// will contain the minimum and maximum value set in our output grid.  we fit
-	// the color for each element into a range between gmin and gmax.
-	gmax := math.Inf(-1)
-	gmin := math.Inf(1)
 
 	// store a float version of the widh and height to avoid type conversion
 	// inside our loop.  i'm not even sure if this helps -- maybe the compiler is
@@ -197,24 +196,66 @@ func (intf *Interferer) Draw(w, h int) {
 
 	// loop through points on screen and add up sin( distance to point[n] ) *
 	// frequency this will make a nice swirly/wavy pattern where the functions
-	// add up constructively. 
-	for y := 0; y < h; y++ {
-		for x := 0; x < w; x++ {
-			a := x + y*w // position in array is x + y * stride
+	// add up constructively.
 
-			// hoist type conversion of x and y to float64 out of the loop below.
-			fx, fy := float64(x), float64(y)
-			for _, p := range intf.Point {
-				px := p.X*fw - fx
-				py := p.Y*fh - fy
-				grid[a] += math.Sin(math.Hypot(px, py) * p.W)
-			}
-
-			// update max and min values we've seen so far
-			gmax = math.Max(grid[a], gmax)
-			gmin = math.Min(grid[a], gmin)
+	goroutines := func() int {
+		if intf.GoRoutines > h {
+			return h
 		}
+		return intf.GoRoutines
+	}()
+
+	lines := h / goroutines
+	done := make(chan [2]float64, goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		starth, maxh := func() (int, int) {
+			if g == goroutines {
+				return g * lines, (g + 1) * lines
+			}
+			return g * lines, h
+		}()
+		go func(hstart, hend int) {
+
+			// prime gmin and gmax with ±infinity. by the end of the loops below they
+			// will contain the minimum and maximum value set in our output grid.  we fit
+			// the color for each element into a range between gmin and gmax.
+			localmin, localmax := math.Inf(1), math.Inf(-1)
+
+			// log.Printf("starting go routine #%d/%d from %d to %d\n", g+1, goroutines, hstart, hend)
+			for y := hstart; y < hend; y++ {
+				for x := 0; x < w; x++ {
+					a := x + y*w // position in array is x + y * stride
+
+					// hoist type conversion of x and y to float64 out of the loop below.
+					fx, fy := float64(x), float64(y)
+					for _, p := range intf.Point {
+						px := p.X*fw - fx
+						py := p.Y*fh - fy
+						grid[a] += math.Sin(math.Hypot(px, py) * p.W)
+					}
+
+					// update max and min values we've seen so far
+					localmin = math.Min(grid[a], localmin)
+					localmax = math.Max(grid[a], localmax)
+				}
+			}
+			done <- [2]float64{localmin, localmax}
+		}(starth, maxh)
 	}
+
+	gmin, gmax := math.Inf(1), math.Inf(-1)
+	for i := 0; i < goroutines; i++ {
+		mm := <-done
+		// log.Printf("received min: %f, max: %f", mm[0], mm[1])
+		gmin = math.Min(gmin, mm[0])
+		gmax = math.Max(gmax, mm[1])
+	}
+
+	return grid, gmin, gmax
+}
+
+func (intf *Interferer) Draw(w, h int, gmin, gmax float64, grid []float64) {
 
 	// map each point in the grid to a color and append characters to our output
 	// bufferr.
@@ -250,9 +291,10 @@ func main() {
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
 	message := flag.String("message", " ", "Message to repeat on terminal. ")
 	points := flag.Int("points", 10, "Number of points to plot.")
+	goroutines := flag.Int("goroutines", 1, "Number of goroutines to spawn when creating grid.")
 	flag.Parse()
 
-	intf, err := New(*points, *cmap, []byte(*message))
+	intf, err := New(*points, *cmap, []byte(*message), *goroutines)
 
 	if err != nil {
 		log.Fatalf("error: %s", err)
@@ -277,7 +319,7 @@ mainloop:
 			case syscall.SIGINT:
 				break mainloop
 			}
-		case <-time.Tick(10 * time.Millisecond):
+		case <-time.Tick(1 * time.Millisecond):
 			intf.Render(w, h)
 		}
 	}
