@@ -177,9 +177,7 @@ func SetForegroundRGB(c []byte, r, g, b byte) []byte {
 func (intf *Interferer) Render(w, h int) {
 	intf.Update()                        // update point positions
 	grid, min, max := intf.Compute(w, h) // compute grid and write it to the screen.
-	// _, min, max := intf.Compute(w, h) // compute grid and write it to the screen.
-	//log.Printf("min = %f, max = %f\n", min, max)
-	intf.Draw(w, h, min, max, grid) // compute grid and write it to the screen.
+	intf.Draw(w, h, min, max, grid)      // compute grid and write it to the screen.
 }
 
 func (intf *Interferer) Compute(w, h int) ([]float64, float64, float64) {
@@ -210,10 +208,10 @@ func (intf *Interferer) Compute(w, h int) ([]float64, float64, float64) {
 
 	for g := 0; g < goroutines; g++ {
 		starth, maxh := func() (int, int) {
-			if g == goroutines {
-				return g * lines, (g + 1) * lines
+			if g == goroutines-1 {
+				return g * lines, h
 			}
-			return g * lines, h
+			return g * lines, (g + 1) * lines
 		}()
 		go func(hstart, hend int) {
 
@@ -222,7 +220,6 @@ func (intf *Interferer) Compute(w, h int) ([]float64, float64, float64) {
 			// the color for each element into a range between gmin and gmax.
 			localmin, localmax := math.Inf(1), math.Inf(-1)
 
-			// log.Printf("starting go routine #%d/%d from %d to %d\n", g+1, goroutines, hstart, hend)
 			for y := hstart; y < hend; y++ {
 				for x := 0; x < w; x++ {
 					a := x + y*w // position in array is x + y * stride
@@ -247,7 +244,6 @@ func (intf *Interferer) Compute(w, h int) ([]float64, float64, float64) {
 	gmin, gmax := math.Inf(1), math.Inf(-1)
 	for i := 0; i < goroutines; i++ {
 		mm := <-done
-		// log.Printf("received min: %f, max: %f", mm[0], mm[1])
 		gmin = math.Min(gmin, mm[0])
 		gmax = math.Max(gmax, mm[1])
 	}
@@ -256,7 +252,6 @@ func (intf *Interferer) Compute(w, h int) ([]float64, float64, float64) {
 }
 
 func (intf *Interferer) Draw(w, h int, gmin, gmax float64, grid []float64) {
-
 	// map each point in the grid to a color and append characters to our output
 	// bufferr.
 	//
@@ -324,5 +319,5 @@ mainloop:
 		}
 	}
 	// reset terminal on exit.
-	fmt.Printf("\x1bc;")
+	// fmt.Printf("\x1bc;")
 }
