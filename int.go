@@ -319,5 +319,5 @@ mainloop:
 		}
 	}
 	// reset terminal on exit.
-	// fmt.Printf("\x1bc;")
+	fmt.Printf("\x1bc;")
 }
