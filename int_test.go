@@ -17,8 +17,8 @@ func BenchmarkCompute(b *testing.B) {
 		{Name: "8 goroutines", Points: 10, Width: 1000, Height: 1000, GoRoutines: 8},
 		{Name: "16 goroutine", Points: 10, Width: 1000, Height: 1000, GoRoutines: 16},
 		{Name: "32 goroutines", Points: 10, Width: 1000, Height: 1000, GoRoutines: 32},
-		{Name: "64 goroutines", Points: 10, Width: 1000, Height: 1000, GoRoutines: 64},
 		{Name: "50 goroutines", Points: 10, Width: 1000, Height: 1000, GoRoutines: 50},
+		{Name: "64 goroutines", Points: 10, Width: 1000, Height: 1000, GoRoutines: 64},
 		{Name: "100 goroutines", Points: 10, Width: 1000, Height: 1000, GoRoutines: 100},
 		{Name: "500 goroutines", Points: 10, Width: 1000, Height: 1000, GoRoutines: 500},
 	}
