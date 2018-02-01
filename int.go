@@ -89,18 +89,14 @@ func (p *Point) Move() {
 
 	// if a point moves off of our grid, wrap it around to the other
 	// side.  i'm not sure if i like this better than bouncing.
-	switch {
-	case p.X < 0:
-		p.X += 1.0
-	case p.X > 1.0:
-		p.X -= 1.0
+	if p.X < 0 || p.X > 1.0 {
+		p.DX *= -1
+		p.X += p.DX * 2
 	}
 
-	switch {
-	case p.Y < 0:
-		p.Y += 1.0
-	case p.Y > 1.0:
-		p.Y -= 1.0
+	if p.Y < 0 || p.Y > 1.0 {
+		p.DY *= -1
+		p.Y += p.DY * 2
 	}
 }
 
