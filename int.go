@@ -300,9 +300,24 @@ func main() {
 	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGINT)
 
 	// prime our temrminal size.
-	w, h, _ := terminal.GetSize(0)
 
 	rand.Seed(time.Now().Unix())
+
+	dims := make(chan [2]int)
+
+	go func() {
+		w, h, _ := terminal.GetSize(0)
+
+		for {
+			select {
+			case <-time.Tick(1 * time.Millisecond):
+				intf.Render(w, h)
+			case arr := <-dims:
+				w = arr[0]
+				h = arr[1]
+			}
+		}
+	}()
 
 mainloop:
 	for {
@@ -310,12 +325,11 @@ mainloop:
 		case sig := <-sigs:
 			switch sig {
 			case syscall.SIGWINCH:
-				w, h, _ = terminal.GetSize(0)
+				w, h, _ := terminal.GetSize(0)
+				dims <- [2]int{w, h}
 			case syscall.SIGINT:
 				break mainloop
 			}
-		case <-time.Tick(1 * time.Millisecond):
-			intf.Render(w, h)
 		}
 	}
 	// reset terminal on exit.
