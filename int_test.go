@@ -3,7 +3,6 @@ package main
 import "testing"
 
 func BenchmarkCompute(b *testing.B) {
-
 	benchmark := []struct {
 		Name       string
 		Points     int

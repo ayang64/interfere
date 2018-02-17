@@ -51,7 +51,7 @@ func generatePoints(points int) []Point {
 			Point{
 				X:  rand.Float64(),
 				Y:  rand.Float64(),
-				W:  rand.Float64() * .5,
+				W:  rand.Float64() * .2,
 				DX: (rand.Float64() - .5) * .01,
 				DY: (rand.Float64() - .5) * .02,
 			})
