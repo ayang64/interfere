@@ -315,7 +315,7 @@ func run() {
 		}
 	}()
 
-	defer fmt.Printf("\x1bc;")
+	defer fmt.Printf("\x1bc")
 
 	for {
 		sig := <-sigs
