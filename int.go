@@ -278,7 +278,7 @@ func (intf *Interferer) Draw(w, h int, gmin, gmax float64, grid []float64) {
 	io.Copy(os.Stdout, intf.Buffer)
 }
 
-func run() {
+func run() float64 {
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
 	message := flag.String("message", " ", "Message to repeat on terminal. ")
 	points := flag.Int("points", 10, "Number of points to plot.")
@@ -301,22 +301,28 @@ func run() {
 
 	dims := make(chan [2]int)
 
+	start := time.Now()
+	renders := 0
+
 	go func() {
 		w, h, _ := terminal.GetSize(0)
 
 		for {
 			select {
-			case <-time.Tick(1 * time.Millisecond):
-				intf.Render(w, h)
 			case arr := <-dims:
 				w = arr[0]
 				h = arr[1]
+			default:
+				intf.Render(w, h)
+				renders++
 			}
 		}
 	}()
 
+	// restore terminal before returning.
 	defer fmt.Printf("\x1bc")
 
+mainloop:
 	for {
 		sig := <-sigs
 		switch sig {
@@ -326,12 +332,17 @@ func run() {
 			dims <- [2]int{w, h}
 
 		case syscall.SIGINT:
-			return
+			break mainloop
 		}
 	}
+
+	duration := time.Since(start)
+	return float64(renders) / duration.Seconds()
 }
 
 func main() {
 	rand.Seed(time.Now().Unix())
-	run()
+	rate := run()
+
+	fmt.Printf("%f frames a second.\n", rate)
 }
