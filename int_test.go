@@ -1,7 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+)
 
+// benchmark rendering performance across a variety of goroutines.
 func BenchmarkCompute(b *testing.B) {
 	benchmark := []struct {
 		Name       string
