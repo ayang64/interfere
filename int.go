@@ -179,8 +179,8 @@ func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
 	return byte(r * 255.0), byte(g * 255.0), byte(b * 255.0)
 }
 
-func SetForegroundRGB(c []byte, r, g, b byte) []byte {
-	return []byte(fmt.Sprintf("\x1b[48;2;%d;%d;%dm%s", r, g, b, c))
+func SetForegroundRGB(r, g, b byte) []byte {
+	return []byte(fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b))
 }
 
 func (intf *Interferer) Render() {
@@ -190,7 +190,6 @@ func (intf *Interferer) Render() {
 }
 
 func (intf *Interferer) Compute() (float64, float64) {
-
 	// store a float version of the widh and height to avoid type conversion
 	// inside our loop.  i'm not even sure if this helps -- maybe the compiler is
 	// smart enough to do this itself. *shrug*
@@ -277,12 +276,11 @@ func (intf *Interferer) Draw(gmin, gmax float64) {
 		// otherwise, we append escape characters to set the color *and* the new
 		// character.
 		c := []byte{intf.Message[a%len(intf.Message)]}
-		if pr == r && pg == g && pb == b {
-			intf.Buffer.Write(c)
-		} else {
+		if pr != r || pg != g || pb != b {
 			pr, pg, pb = r, g, b
-			intf.Buffer.Write(SetForegroundRGB(c, r, g, b))
+			intf.Buffer.Write(SetForegroundRGB(r, g, b))
 		}
+		intf.Buffer.Write(c)
 	}
 
 	// at this point we should have a colorful buffer to push to the terminal!
