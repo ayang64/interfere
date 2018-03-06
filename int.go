@@ -33,14 +33,14 @@ type Point struct {
 
 type ColorMapFunc func(float64, float64, float64) (byte, byte, byte)
 type Interferer struct {
-	Message       []byte  // characters to print in each cell.
-	Point         []Point // map of points where ripple originates.
-	ColorMapFunc          // function to call when mapping a cell's value to a color.
-	*bytes.Buffer         // buffer to store grid that we display
-	GoRoutines    int
+	Message       []byte    // characters to print in each cell.
+	Point         []Point   // map of points where ripple originates.
+	ColorMapFunc            // function to call when mapping a cell's value to a color.
+	*bytes.Buffer           // buffer to store grid that we display
+	GoRoutines    int       // number of goroutines to spawn.
 	Grid          []float64 // resulting grid
-	Width         int
-	Height        int
+	Width         int       // width of display grid
+	Height        int       // height of display grid
 }
 
 func (intf *Interferer) SetDimensions(w, h int) error {
