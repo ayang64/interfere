@@ -22,6 +22,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -292,7 +293,7 @@ func run() float64 {
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
 	message := flag.String("message", " ", "Message to repeat on terminal. ")
 	points := flag.Int("points", 10, "Number of points to plot.")
-	goroutines := flag.Int("goroutines", 1, "Number of goroutines to spawn when creating grid.")
+	goroutines := flag.Int("goroutines", runtime.NumCPU(), "Number of goroutines to spawn when creating grid. Defaults to number of logical CPUs.")
 	flag.Parse()
 
 	w, h, _ := terminal.GetSize(0)
