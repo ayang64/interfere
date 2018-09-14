@@ -22,6 +22,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/trace"
 	"syscall"
 	"time"
 
@@ -293,7 +294,22 @@ func run() float64 {
 	message := flag.String("message", " ", "Message to repeat on terminal. ")
 	points := flag.Int("points", 10, "Number of points to plot.")
 	goroutines := flag.Int("goroutines", runtime.NumCPU(), "Number of goroutines to spawn when creating grid. Defaults to number of logical CPUs.")
+	traceFile := flag.String("trace", "", "File to output trace information to. If empty, then no trace information is saved.")
 	flag.Parse()
+
+	if *traceFile != "" {
+		w, err := os.Create(*traceFile)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if err := trace.Start(w); err != nil {
+			log.Fatal(err)
+		}
+
+		defer trace.Stop()
+	}
 
 	w, h, _ := terminal.GetSize(0)
 	intf, err := New(*points, w, h, *cmap, []byte(*message), *goroutines)
