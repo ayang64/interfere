@@ -126,7 +126,7 @@ func MapBlueRed(z, min_z, max_z float64) (byte, byte, byte) {
 	absz := z - min_z
 	wl := absz / zrange
 	b := byte(wl * 255.0)
-	return 0, b, 255 - b
+	return b, 0, 255 - b
 }
 
 func MapRed(z, min_z, max_z float64) (byte, byte, byte) {
