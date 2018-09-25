@@ -15,20 +15,24 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"golang.org/x/crypto/ssh/terminal"
 	"io"
 	"log"
 	"math"
 	"math/rand"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/trace"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 type Point struct {
-	X, Y, W float64 // x, y, and wavelength
-	DX, DY  float64 // x and y displacement
+	P complex128 // point coordinates
+	D complex128 // delta in each axis
+	W float64    // x, y, and wavelength
 }
 
 type ColorMapFunc func(float64, float64, float64) (byte, byte, byte)
@@ -44,8 +48,7 @@ type Interferer struct {
 }
 
 func (intf *Interferer) SetDimensions(w, h int) error {
-	intf.Width = w
-	intf.Height = h
+	intf.Width, intf.Height = w, h
 	intf.Grid = make([]float64, intf.Width*intf.Height)
 	return nil
 }
@@ -60,11 +63,9 @@ func generatePoints(points int) []Point {
 	for i := 0; i < points; i++ {
 		rc = append(rc,
 			Point{
-				X:  rand.Float64(),
-				Y:  rand.Float64(),
-				W:  rand.Float64() * .2,
-				DX: (rand.Float64() - .5) * .01,
-				DY: (rand.Float64() - .5) * .02,
+				D: complex(((rand.Float64() - .5) * .01), ((rand.Float64() - .5) * .02)),
+				P: complex(rand.Float64(), rand.Float64()),
+				W: rand.Float64() * .2,
 			})
 	}
 	return rc
@@ -98,20 +99,20 @@ func New(points int, w int, h int, cmapname string, message []byte, goroutines i
 }
 
 func (p *Point) Move() {
-	p.X += p.DX
-	p.Y += p.DY
-
 	// if a point moves off of our grid, wrap it around to the other
 	// side.  i'm not sure if i like this better than bouncing.
-	if p.X < 0 || p.X > 1.0 {
-		p.DX *= -1
-		p.X += p.DX * 2
+	n := p.P + p.D
+
+	if real(n) < 0.0 || real(n) > 1.0 {
+		// p.D *= complex(-1, 1)
+		p.D = complex(-real(p.D), imag(p.D))
 	}
 
-	if p.Y < 0 || p.Y > 1.0 {
-		p.DY *= -1
-		p.Y += p.DY * 2
+	if imag(n) < 0.0 || imag(n) > 1.0 {
+		p.D = complex(real(p.D), -imag(p.D))
 	}
+
+	p.P += p.D
 }
 
 func (intf *Interferer) Update() {
@@ -247,8 +248,8 @@ func (intf *Interferer) Compute() (float64, float64) {
 					a := x + y*intf.Width // position in array is x + y * stride
 					// hoist type conversion of x and y to float64 out of the loop below.
 					fx, fy := float64(x), float64(y)
-					for _, p := range intf.Point {
-						intf.Grid[a] += math.Sin(math.Hypot(p.X*fw-fx, p.Y*fh-fy) * p.W)
+					for idx := range intf.Point {
+						intf.Grid[a] += math.Sin(math.Hypot(real(intf.Point[idx].P)*fw-fx, imag(intf.Point[idx].P)*fh-fy) * intf.Point[idx].W)
 					}
 					// update max and min values we've seen so far
 					localmin = math.Min(intf.Grid[a], localmin)
@@ -307,8 +308,23 @@ func run() float64 {
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
 	message := flag.String("message", " ", "Message to repeat on terminal. ")
 	points := flag.Int("points", 10, "Number of points to plot.")
-	goroutines := flag.Int("goroutines", 1, "Number of goroutines to spawn when creating grid.")
+	goroutines := flag.Int("goroutines", runtime.NumCPU(), "Number of goroutines to spawn when creating grid. Defaults to number of logical CPUs.")
+	traceFile := flag.String("trace", "", "File to output trace information to. If empty, then no trace information is saved.")
 	flag.Parse()
+
+	if *traceFile != "" {
+		w, err := os.Create(*traceFile)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if err := trace.Start(w); err != nil {
+			log.Fatal(err)
+		}
+
+		defer trace.Stop()
+	}
 
 	w, h, _ := terminal.GetSize(0)
 	intf, err := New(*points, w, h, *cmap, []byte(*message), *goroutines)
