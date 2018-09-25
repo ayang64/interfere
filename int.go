@@ -74,6 +74,7 @@ func generatePoints(points int) []Point {
 func New(points int, w int, h int, cmapname string, message []byte, goroutines int) (*Interferer, error) {
 	colmap := map[string]ColorMapFunc{
 		"roygbiv": MapRoygbiv,
+		"lorn":    MapLorn,
 		"red":     MapRed,
 		"bluered": MapBlueRed,
 		"grey":    MapGrey,
@@ -133,6 +134,20 @@ func MapRed(z, min_z, max_z float64) (byte, byte, byte) {
 	wl := absz / zrange
 	b := byte(wl * 255.0)
 	return b, 0, 0
+}
+
+func MapLorn(z, min_z, max_z float64) (byte, byte, byte) {
+	zrange := max_z - min_z
+	absz := z - min_z
+	wl := absz / zrange
+
+	b := func() byte {
+		if wl > .60 {
+			return 0xdf
+		}
+		return 0x0
+	}()
+	return b, b, b
 }
 
 func MapGrey(z, min_z, max_z float64) (byte, byte, byte) {
