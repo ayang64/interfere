@@ -310,6 +310,7 @@ func run() float64 {
 	points := flag.Int("points", 10, "Number of points to plot.")
 	goroutines := flag.Int("goroutines", runtime.NumCPU(), "Number of goroutines to spawn when creating grid. Defaults to number of logical CPUs.")
 	traceFile := flag.String("trace", "", "File to output trace information to. If empty, then no trace information is saved.")
+	runDuration := flag.Int("duration", 0, "Max run time in seconds.")
 	flag.Parse()
 
 	if *traceFile != "" {
@@ -356,17 +357,30 @@ func run() float64 {
 	sigs := make(chan os.Signal)
 	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGINT)
 
+	ticker := func() <-chan time.Time {
+		if *runDuration == 0 {
+			return nil
+		}
+		t := time.NewTicker(time.Duration(*runDuration) * time.Second)
+		return t.C
+	}()
+
 mainloop:
 	for {
-		sig := <-sigs
-		switch sig {
-		case syscall.SIGWINCH:
-			w, h, _ := terminal.GetSize(0)
-			// send new dimensions to renderer
-			dims <- [2]int{w, h}
-
-		case syscall.SIGINT:
+		select {
+		case <-ticker:
 			break mainloop
+
+		case sig := <-sigs:
+			switch sig {
+			case syscall.SIGWINCH:
+				w, h, _ := terminal.GetSize(0)
+				// send new dimensions to renderer
+				dims <- [2]int{w, h}
+
+			case syscall.SIGINT:
+				break mainloop
+			}
 		}
 	}
 
