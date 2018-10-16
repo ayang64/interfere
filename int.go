@@ -333,8 +333,6 @@ func run() float64 {
 		log.Fatalf("error: %s", err)
 	}
 
-	rand.Seed(time.Now().Unix())
-
 	dims := make(chan [2]int)
 
 	start := time.Now()
@@ -377,6 +375,6 @@ mainloop:
 }
 
 func main() {
-	rand.Seed(time.Now().Unix())
+	rand.Seed(time.Now().UnixNano())
 	fmt.Printf("%f frames a second.\n", run())
 }
