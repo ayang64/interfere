@@ -22,7 +22,9 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
 	"runtime/trace"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -35,9 +37,8 @@ type Point struct {
 	W float64    // x, y, and wavelength
 }
 
-type ColorMapFunc func(float64, float64, float64) (byte, byte, byte)
+type ColorMapFunc func(float64, float64, float64) (int, int, int)
 type Interferer struct {
-	Message       []byte    // characters to print in each cell.
 	Point         []Point   // map of points where ripple originates.
 	ColorMapFunc            // function to call when mapping a cell's value to a color.
 	*bytes.Buffer           // buffer to store grid that we display
@@ -45,12 +46,16 @@ type Interferer struct {
 	Grid          []float64 // resulting grid
 	Width         int       // width of display grid
 	Height        int       // height of display grid
+	dims          chan [2]int
+	done          chan [2]float64
+	colorbuf      []byte
 }
 
 func (intf *Interferer) SetDimensions(w, h int) error {
 	intf.Width, intf.Height = w, h
 	intf.Grid = make([]float64, intf.Width*intf.Height)
 	return nil
+
 }
 
 // return a slice of points primed with sane random values.
@@ -72,7 +77,7 @@ func generatePoints(points int) []Point {
 }
 
 // builds and returns a new Interferer
-func New(points int, w int, h int, cmapname string, message []byte, goroutines int) (*Interferer, error) {
+func New(points int, w int, h int, cmapname string, goroutines int) (*Interferer, error) {
 	colmap := map[string]ColorMapFunc{
 		"roygbiv": MapRoygbiv,
 		"lorn":    MapLorn,
@@ -88,9 +93,10 @@ func New(points int, w int, h int, cmapname string, message []byte, goroutines i
 	rc := &Interferer{
 		ColorMapFunc: colmap[cmapname],
 		Point:        generatePoints(points),
-		Message:      message,
 		Buffer:       bytes.NewBuffer([]byte{}),
 		GoRoutines:   goroutines,
+		dims:         make(chan [2]int),
+		colorbuf:     make([]byte, 256),
 	}
 
 	rc.SetDimensions(w, h)
@@ -121,28 +127,28 @@ func (intf *Interferer) Update() {
 	}
 }
 
-func MapBlueRed(z, min_z, max_z float64) (byte, byte, byte) {
+func MapBlueRed(z, min_z, max_z float64) (int, int, int) {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
-	b := byte(wl * 255.0)
+	b := int(wl * 255.0)
 	return b, 0, 255 - b
 }
 
-func MapRed(z, min_z, max_z float64) (byte, byte, byte) {
+func MapRed(z, min_z, max_z float64) (int, int, int) {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
-	b := byte(wl * 255.0)
+	b := int(wl * 255.0)
 	return b, 0, 0
 }
 
-func MapLorn(z, min_z, max_z float64) (byte, byte, byte) {
+func MapLorn(z, min_z, max_z float64) (int, int, int) {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
 
-	b := func() byte {
+	b := func() int {
 		if wl > .60 {
 			return 0xdf
 		}
@@ -151,17 +157,17 @@ func MapLorn(z, min_z, max_z float64) (byte, byte, byte) {
 	return b, b, b
 }
 
-func MapGrey(z, min_z, max_z float64) (byte, byte, byte) {
+func MapGrey(z, min_z, max_z float64) (int, int, int) {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
-	b := byte(wl * 255.0)
+	b := int(wl * 255.0)
 	return b, b, b
 }
 
 // from http://www.physics.sfasu.edu/astro/color/spectra.html
 // scale value to color between 380nm and 780nm
-func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
+func MapRoygbiv(z, min_z, max_z float64) (int, int, int) {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
@@ -192,17 +198,28 @@ func MapRoygbiv(z, min_z, max_z float64) (byte, byte, byte) {
 		// values are wrong.
 		r, g, b = 0.0, 0.0, 0.0
 	}
-	return byte(r * 255.0), byte(g * 255.0), byte(b * 255.0)
+	return int(r * 255.0), int(g * 255.0), int(b * 255.0)
 }
 
-func SetForegroundRGB(r, g, b byte) []byte {
-	return []byte(fmt.Sprintf("\x1b[48;2;%d;%d;%dm", r, g, b))
+func SetForegroundRGB(r, g, b int) []byte {
+
+	return []byte("\x1b[48;2;" + strconv.Itoa(r) + ";" + strconv.Itoa(g) + ";" + strconv.Itoa(b) + "m")
 }
 
 func (intf *Interferer) Render() {
 	intf.Update()              // update point positions
 	min, max := intf.Compute() // compute grid and write it to the screen.
 	intf.Draw(min, max)        // compute grid and write it to the screen.
+	io.Copy(os.Stdout, &ReadWrapper{r: intf.Buffer})
+	// io.Copy(os.Stdout, intf.Buffer)
+}
+
+type ReadWrapper struct {
+	r io.Reader
+}
+
+func (w *ReadWrapper) Read(p []byte) (int, error) {
+	return w.r.Read(p)
 }
 
 func (intf *Interferer) Compute() (float64, float64) {
@@ -223,7 +240,9 @@ func (intf *Interferer) Compute() (float64, float64) {
 	}()
 
 	lines := intf.Height / goroutines
-	done := make(chan [2]float64, goroutines)
+	if intf.done == nil || cap(intf.done) < goroutines {
+		intf.done = make(chan [2]float64, goroutines)
+	}
 
 	for i := range intf.Grid {
 		intf.Grid[i] = 0.0
@@ -256,14 +275,14 @@ func (intf *Interferer) Compute() (float64, float64) {
 					localmax = math.Max(intf.Grid[a], localmax)
 				}
 			}
-			done <- [2]float64{localmin, localmax}
+			intf.done <- [2]float64{localmin, localmax}
 		}(starth, maxh)
 	}
 
 	gmin, gmax := math.Inf(1), math.Inf(-1)
 
 	for i := 0; i < goroutines; i++ {
-		mm := <-done
+		mm := <-intf.done
 		gmin, gmax = math.Min(gmin, mm[0]), math.Max(gmax, mm[1])
 	}
 
@@ -280,7 +299,7 @@ func (intf *Interferer) Draw(gmin, gmax float64) {
 	//
 	// SUBTLE: pr, pg, and pb are declared in this loop because we don't need
 	// them outide of that scope.
-	for a, pr, pg, pb := 0, byte(0), byte(0), byte(0); a < len(intf.Grid); a++ {
+	for a, pr, pg, pb := 0, int(0), int(0), int(0); a < len(intf.Grid); a++ {
 		// map current value to a color.
 		r, g, b := intf.ColorMapFunc(intf.Grid[a], gmin, gmax)
 
@@ -291,26 +310,39 @@ func (intf *Interferer) Draw(gmin, gmax float64) {
 		// character to our output buffer as the color is already what we want.
 		// otherwise, we append escape characters to set the color *and* the new
 		// character.
-		c := []byte{intf.Message[a%len(intf.Message)]}
 		if pr != r || pg != g || pb != b {
+			// FIXME -- this is kind of hamfisted.
 			pr, pg, pb = r, g, b
-			intf.Buffer.Write(SetForegroundRGB(r, g, b))
+			intf.Buffer.Write([]byte("\x1b[48;2;"))
+			intf.colorbuf = intf.colorbuf[0:0]
+			intf.colorbuf = strconv.AppendInt(intf.colorbuf, int64(r), 10)
+			intf.Buffer.Write(intf.colorbuf)
+			intf.Buffer.Write([]byte{';'})
+
+			intf.colorbuf = intf.colorbuf[0:0]
+			intf.colorbuf = strconv.AppendInt(intf.colorbuf, int64(g), 10)
+			intf.Buffer.Write(intf.colorbuf)
+			intf.Buffer.Write([]byte{';'})
+
+			intf.colorbuf = intf.colorbuf[0:0]
+			intf.colorbuf = strconv.AppendInt(intf.colorbuf, int64(b), 10)
+			intf.Buffer.Write(intf.colorbuf)
+			intf.Buffer.Write([]byte{'m'})
 		}
-		intf.Buffer.Write(c)
+		intf.Buffer.Write([]byte{' '})
 	}
 
 	// at this point we should have a colorful buffer to push to the terminal!
 	// lets copy it to os.Stdout.
-	io.Copy(os.Stdout, intf.Buffer)
 }
 
 func run() float64 {
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
-	message := flag.String("message", " ", "Message to repeat on terminal. ")
 	points := flag.Int("points", 10, "Number of points to plot.")
 	goroutines := flag.Int("goroutines", runtime.NumCPU(), "Number of goroutines to spawn when creating grid. Defaults to number of logical CPUs.")
 	traceFile := flag.String("trace", "", "File to output trace information to. If empty, then no trace information is saved.")
-	runDuration := flag.Int("duration", 0, "Max run time in seconds.")
+	runDuration := flag.Duration("duration", time.Duration(0), "Max run time in seconds.")
+	memprofile := flag.String("memprofile", "", "Location of memory profile.")
 	flag.Parse()
 
 	if *traceFile != "" {
@@ -328,25 +360,18 @@ func run() float64 {
 	}
 
 	w, h, _ := terminal.GetSize(0)
-	intf, err := New(*points, w, h, *cmap, []byte(*message), *goroutines)
+	intf, err := New(*points, w, h, *cmap, *goroutines)
 
 	if err != nil {
 		log.Fatalf("error: %s", err)
 	}
 
-	dims := make(chan [2]int)
-
 	start := time.Now()
 	renders := 0
 	go func() {
 		for {
-			select {
-			case wh := <-dims:
-				intf.SetDimensions(wh[0], wh[1])
-			default:
-				intf.Render()
-				renders++
-			}
+			intf.Render()
+			renders++
 		}
 	}()
 
@@ -361,7 +386,7 @@ func run() float64 {
 		if *runDuration == 0 {
 			return nil
 		}
-		t := time.NewTicker(time.Duration(*runDuration) * time.Second)
+		t := time.NewTicker(*runDuration)
 		return t.C
 	}()
 
@@ -376,7 +401,7 @@ mainloop:
 			case syscall.SIGWINCH:
 				w, h, _ := terminal.GetSize(0)
 				// send new dimensions to renderer
-				dims <- [2]int{w, h}
+				intf.dims <- [2]int{w, h}
 
 			case syscall.SIGINT:
 				break mainloop
@@ -385,10 +410,27 @@ mainloop:
 	}
 
 	duration := time.Since(start)
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		runtime.GC()
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal(err)
+		}
+
+		f.Close()
+	}
+
 	return float64(renders) / duration.Seconds()
 }
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
 	fmt.Printf("%f frames a second.\n", run())
+
 }
