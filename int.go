@@ -210,7 +210,7 @@ func (intf *Interferer) Render() {
 	intf.Update()              // update point positions
 	min, max := intf.Compute() // compute grid and write it to the screen.
 	intf.Draw(min, max)        // compute grid and write it to the screen.
-	io.Copy(os.Stdout, &ReadWrapper{r: intf.Buffer})
+	io.Copy(os.Stdout, intf.Buffer)
 	// io.Copy(os.Stdout, intf.Buffer)
 }
 
