@@ -13,6 +13,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -66,12 +67,11 @@ func generatePoints(points int) []Point {
 	// around a 1.0 x 1.0 field.  later we translate this grid to terminal
 	// coordinates.
 	for i := 0; i < points; i++ {
-		rc = append(rc,
-			Point{
-				D: complex(((rand.Float64() - .5) * .01), ((rand.Float64() - .5) * .02)),
-				P: complex(rand.Float64(), rand.Float64()),
-				W: rand.Float64() * .2,
-			})
+		rc[i] = Point{
+			D: complex(((rand.Float64() - .5) * .01), ((rand.Float64() - .5) * .02)),
+			P: complex(rand.Float64(), rand.Float64()),
+			W: rand.Float64() * .2,
+		}
 	}
 	return rc
 }
@@ -110,7 +110,6 @@ func (p *Point) Move() {
 	n := p.P + p.D
 
 	if real(n) < 0.0 || real(n) > 1.0 {
-		// p.D *= complex(-1, 1)
 		p.D = complex(-real(p.D), imag(p.D))
 	}
 
@@ -336,7 +335,7 @@ func (intf *Interferer) Draw(gmin, gmax float64) {
 	// lets copy it to os.Stdout.
 }
 
-func run() float64 {
+func run(ctx context.Context) float64 {
 	cmap := flag.String("cmap", "roygbiv", "Color map function to apply.  Options are: roygbiv, red, bluered, and grey.")
 	points := flag.Int("points", 10, "Number of points to plot.")
 	goroutines := flag.Int("goroutines", runtime.NumCPU(), "Number of goroutines to spawn when creating grid. Defaults to number of logical CPUs.")
@@ -344,6 +343,15 @@ func run() float64 {
 	runDuration := flag.Duration("duration", time.Duration(0), "Max run time in seconds.")
 	memprofile := flag.String("memprofile", "", "Location of memory profile.")
 	flag.Parse()
+
+	ctx, cancel := func() (context.Context, func()) {
+		if *runDuration != time.Duration(0) {
+			return context.WithTimeout(ctx, *runDuration)
+		}
+		return ctx, func() {}
+	}()
+
+	defer cancel()
 
 	if *traceFile != "" {
 		w, err := os.Create(*traceFile)
@@ -382,27 +390,17 @@ func run() float64 {
 	sigs := make(chan os.Signal)
 	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGINT)
 
-	ticker := func() <-chan time.Time {
-		if *runDuration == 0 {
-			return nil
-		}
-		t := time.NewTicker(*runDuration)
-		return t.C
-	}()
-
 mainloop:
 	for {
 		select {
-		case <-ticker:
+		case <-ctx.Done():
 			break mainloop
-
 		case sig := <-sigs:
 			switch sig {
 			case syscall.SIGWINCH:
 				w, h, _ := terminal.GetSize(0)
 				// send new dimensions to renderer
 				intf.dims <- [2]int{w, h}
-
 			case syscall.SIGINT:
 				break mainloop
 			}
@@ -431,6 +429,5 @@ mainloop:
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
-	fmt.Printf("%f frames a second.\n", run())
-
+	fmt.Printf("%f frames a second.\n", run(context.Background()))
 }
