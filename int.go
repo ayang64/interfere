@@ -16,7 +16,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
+	"image"
+	"image/color"
 	"log"
 	"math"
 	"math/rand"
@@ -29,16 +30,17 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ayang64/asciiart"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
 type Point struct {
 	P complex128 // point coordinates
 	D complex128 // delta in each axis
-	W float64    // x, y, and wavelength
+	W float64    // wavelength
 }
 
-type ColorMapFunc func(float64, float64, float64) (int, int, int)
+type ColorMapFunc func(float64, float64, float64) color.RGBA
 type Interferer struct {
 	Point         []Point   // map of points where ripple originates.
 	ColorMapFunc            // function to call when mapping a cell's value to a color.
@@ -47,16 +49,17 @@ type Interferer struct {
 	Grid          []float64 // resulting grid
 	Width         int       // width of display grid
 	Height        int       // height of display grid
+	Image         *image.RGBA
 	dims          chan [2]int
 	done          chan [2]float64
 	colorbuf      []byte
 }
 
 func (intf *Interferer) SetDimensions(w, h int) error {
+	intf.Image = image.NewRGBA(image.Rect(0, 0, w, h))
 	intf.Width, intf.Height = w, h
 	intf.Grid = make([]float64, intf.Width*intf.Height)
 	return nil
-
 }
 
 // return a slice of points primed with sane random values.
@@ -126,23 +129,23 @@ func (intf *Interferer) Update() {
 	}
 }
 
-func MapBlueRed(z, min_z, max_z float64) (int, int, int) {
+func MapBlueRed(z, min_z, max_z float64) color.RGBA {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
 	b := int(wl * 255.0)
-	return b, 0, 255 - b
+	return color.RGBA{R: uint8(b), G: 0, B: 255 - uint8(b), A: 255}
 }
 
-func MapRed(z, min_z, max_z float64) (int, int, int) {
+func MapRed(z, min_z, max_z float64) color.RGBA {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
 	b := int(wl * 255.0)
-	return b, 0, 0
+	return color.RGBA{R: uint8(b), G: 0, B: 0, A: 255}
 }
 
-func MapLorn(z, min_z, max_z float64) (int, int, int) {
+func MapLorn(z, min_z, max_z float64) color.RGBA {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
@@ -153,20 +156,20 @@ func MapLorn(z, min_z, max_z float64) (int, int, int) {
 		}
 		return 0x0
 	}()
-	return b, b, b
+	return color.RGBA{R: uint8(b), G: uint8(b), B: uint8(b), A: 255}
 }
 
-func MapGrey(z, min_z, max_z float64) (int, int, int) {
+func MapGrey(z, min_z, max_z float64) color.RGBA {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
 	b := int(wl * 255.0)
-	return b, b, b
+	return color.RGBA{R: uint8(b), G: uint8(b), B: uint8(b), A: 255}
 }
 
 // from http://www.physics.sfasu.edu/astro/color/spectra.html
 // scale value to color between 380nm and 780nm
-func MapRoygbiv(z, min_z, max_z float64) (int, int, int) {
+func MapRoygbiv(z, min_z, max_z float64) color.RGBA {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
@@ -197,28 +200,17 @@ func MapRoygbiv(z, min_z, max_z float64) (int, int, int) {
 		// values are wrong.
 		r, g, b = 0.0, 0.0, 0.0
 	}
-	return int(r * 255.0), int(g * 255.0), int(b * 255.0)
+	return color.RGBA{R: uint8(r * 255.0), G: uint8(g * 255.0), B: uint8(b * 255.0), A: 255}
 }
 
 func SetForegroundRGB(r, g, b int) []byte {
-
 	return []byte("\x1b[48;2;" + strconv.Itoa(r) + ";" + strconv.Itoa(g) + ";" + strconv.Itoa(b) + "m")
 }
 
-func (intf *Interferer) Render() {
+func (intf *Interferer) Render(ctx context.Context) {
 	intf.Update()              // update point positions
 	min, max := intf.Compute() // compute grid and write it to the screen.
 	intf.Draw(min, max)        // compute grid and write it to the screen.
-	io.Copy(os.Stdout, intf.Buffer)
-	// io.Copy(os.Stdout, intf.Buffer)
-}
-
-type ReadWrapper struct {
-	r io.Reader
-}
-
-func (w *ReadWrapper) Read(p []byte) (int, error) {
-	return w.r.Read(p)
 }
 
 func (intf *Interferer) Compute() (float64, float64) {
@@ -243,10 +235,6 @@ func (intf *Interferer) Compute() (float64, float64) {
 		intf.done = make(chan [2]float64, goroutines)
 	}
 
-	for i := range intf.Grid {
-		intf.Grid[i] = 0.0
-	}
-
 	for g := 0; g < goroutines; g++ {
 		starth, maxh := func() (int, int) {
 			if g == goroutines-1 {
@@ -266,6 +254,7 @@ func (intf *Interferer) Compute() (float64, float64) {
 					a := x + y*intf.Width // position in array is x + y * stride
 					// hoist type conversion of x and y to float64 out of the loop below.
 					fx, fy := float64(x), float64(y)
+					intf.Grid[a] = 0.0
 					for idx := range intf.Point {
 						intf.Grid[a] += math.Sin(math.Hypot(real(intf.Point[idx].P)*fw-fx, imag(intf.Point[idx].P)*fh-fy) * intf.Point[idx].W)
 					}
@@ -288,51 +277,20 @@ func (intf *Interferer) Compute() (float64, float64) {
 	return gmin, gmax
 }
 
-func (intf *Interferer) Draw(gmin, gmax float64) {
+func (intf *Interferer) Draw(gmin, gmax float64) error {
 	// prepend escape code to move cursor to upper left hand corner to the
 	// beginning of our output buffer.
-	intf.Buffer.Write([]byte("\x1b[;f"))
-
-	// map each point in the grid to a color and append characters to our output
-	// bufferr.
-	//
-	// SUBTLE: pr, pg, and pb are declared in this loop because we don't need
-	// them outide of that scope.
-	for a, pr, pg, pb := 0, int(0), int(0), int(0); a < len(intf.Grid); a++ {
-		// map current value to a color.
-		r, g, b := intf.ColorMapFunc(intf.Grid[a], gmin, gmax)
-
-		// lets not set the color if we don't need to.
-		//
-		// we've stored the previous r, g, b values in pr, pg, pb (previous-r,
-		// etc...).  if the new ones match the previous, we simply append a
-		// character to our output buffer as the color is already what we want.
-		// otherwise, we append escape characters to set the color *and* the new
-		// character.
-		if pr != r || pg != g || pb != b {
-			// FIXME -- this is kind of hamfisted.
-			pr, pg, pb = r, g, b
-			intf.Buffer.Write([]byte("\x1b[48;2;"))
-			intf.colorbuf = intf.colorbuf[0:0]
-			intf.colorbuf = strconv.AppendInt(intf.colorbuf, int64(r), 10)
-			intf.Buffer.Write(intf.colorbuf)
-			intf.Buffer.Write([]byte{';'})
-
-			intf.colorbuf = intf.colorbuf[0:0]
-			intf.colorbuf = strconv.AppendInt(intf.colorbuf, int64(g), 10)
-			intf.Buffer.Write(intf.colorbuf)
-			intf.Buffer.Write([]byte{';'})
-
-			intf.colorbuf = intf.colorbuf[0:0]
-			intf.colorbuf = strconv.AppendInt(intf.colorbuf, int64(b), 10)
-			intf.Buffer.Write(intf.colorbuf)
-			intf.Buffer.Write([]byte{'m'})
+	for y := 0; y < intf.Height; y++ {
+		for x := 0; x < intf.Width; x++ {
+			a := x + y*intf.Width // position in array is x + y * stride
+			intf.Image.Set(x, y, intf.ColorMapFunc(intf.Grid[a], gmin, gmax))
 		}
-		intf.Buffer.Write([]byte{' '})
 	}
 
-	// at this point we should have a colorful buffer to push to the terminal!
-	// lets copy it to os.Stdout.
+	if err := asciiart.Encode(os.Stdout, intf.Image); err != nil {
+		return err
+	}
+	return nil
 }
 
 func run(ctx context.Context) float64 {
@@ -344,21 +302,24 @@ func run(ctx context.Context) float64 {
 	memprofile := flag.String("memprofile", "", "Location of memory profile.")
 	flag.Parse()
 
-	ctx, cancel := func() (context.Context, func()) {
+	ctx, timeOutCancel := func() (context.Context, func()) {
 		if *runDuration != time.Duration(0) {
 			return context.WithTimeout(ctx, *runDuration)
 		}
 		return ctx, func() {}
 	}()
 
+	defer timeOutCancel()
+
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	if *traceFile != "" {
 		w, err := os.Create(*traceFile)
-
 		if err != nil {
 			log.Fatal(err)
 		}
+		defer w.Close()
 
 		if err := trace.Start(w); err != nil {
 			log.Fatal(err)
@@ -368,7 +329,7 @@ func run(ctx context.Context) float64 {
 	}
 
 	w, h, _ := terminal.GetSize(0)
-	intf, err := New(*points, w, h, *cmap, *goroutines)
+	intf, err := New(*points, w, h*2, *cmap, *goroutines)
 
 	if err != nil {
 		log.Fatalf("error: %s", err)
@@ -378,7 +339,11 @@ func run(ctx context.Context) float64 {
 	renders := 0
 	go func() {
 		for {
-			intf.Render()
+			if err := ctx.Err(); err != nil {
+				// cancelled
+				return
+			}
+			intf.Render(ctx)
 			renders++
 		}
 	}()
@@ -400,12 +365,14 @@ mainloop:
 			case syscall.SIGWINCH:
 				w, h, _ := terminal.GetSize(0)
 				// send new dimensions to renderer
-				intf.dims <- [2]int{w, h}
+				intf.dims <- [2]int{w, h * 2}
 			case syscall.SIGINT:
 				break mainloop
 			}
 		}
 	}
+
+	cancel()
 
 	duration := time.Since(start)
 
