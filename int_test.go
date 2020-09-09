@@ -28,7 +28,7 @@ func BenchmarkCompute(b *testing.B) {
 	}
 
 	for _, bm := range benchmark {
-		intf, _ := New(bm.Points, bm.Width, bm.Height, "roygbiv", []byte{' '}, bm.GoRoutines)
+		intf, _ := New(bm.Points, bm.Width, bm.Height, "roygbiv", bm.GoRoutines)
 		b.ResetTimer()
 		b.Run(bm.Name, func(b *testing.B) {
 			for i := 0; i < b.N; i++ {

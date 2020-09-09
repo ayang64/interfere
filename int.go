@@ -355,6 +355,12 @@ func run(ctx context.Context) float64 {
 	sigs := make(chan os.Signal)
 	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGINT)
 
+	go func() {
+		for dim := range intf.dims {
+			intf.SetDimensions(dim[0], dim[1])
+		}
+	}()
+
 mainloop:
 	for {
 		select {
