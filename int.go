@@ -27,6 +27,7 @@ import (
 	"runtime/pprof"
 	"runtime/trace"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,10 +43,11 @@ type Point struct {
 
 type ColorMapFunc func(float64, float64, float64) color.RGBA
 type Interferer struct {
-	Point         []Point   // map of points where ripple originates.
-	ColorMapFunc            // function to call when mapping a cell's value to a color.
-	*bytes.Buffer           // buffer to store grid that we display
-	GoRoutines    int       // number of goroutines to spawn.
+	Point         []Point // map of points where ripple originates.
+	ColorMapFunc          // function to call when mapping a cell's value to a color.
+	*bytes.Buffer         // buffer to store grid that we display
+	GoRoutines    int     // number of goroutines to spawn.
+	GridMutex     sync.Mutex
 	Grid          []float64 // resulting grid
 	Width         int       // width of display grid
 	Height        int       // height of display grid
@@ -56,9 +58,11 @@ type Interferer struct {
 }
 
 func (intf *Interferer) SetDimensions(w, h int) error {
+	intf.GridMutex.Lock()
 	intf.Image = image.NewRGBA(image.Rect(0, 0, w, h))
 	intf.Width, intf.Height = w, h
 	intf.Grid = make([]float64, intf.Width*intf.Height)
+	intf.GridMutex.Unlock()
 	return nil
 }
 
@@ -208,9 +212,12 @@ func SetForegroundRGB(r, g, b int) []byte {
 }
 
 func (intf *Interferer) Render(ctx context.Context) {
-	intf.Update()              // update point positions
+	intf.Update() // update point positions
+
+	intf.GridMutex.Lock()
 	min, max := intf.Compute() // compute grid and write it to the screen.
 	intf.Draw(min, max)        // compute grid and write it to the screen.
+	intf.GridMutex.Unlock()
 }
 
 func (intf *Interferer) Compute() (float64, float64) {
