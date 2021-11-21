@@ -152,7 +152,6 @@ func MapLorn(z, min_z, max_z float64) color.RGBA {
 	zrange := max_z - min_z
 	absz := z - min_z
 	wl := absz / zrange
-
 	b := func() int {
 		if wl > .60 {
 			return 0xdf
@@ -359,7 +358,10 @@ func run(ctx context.Context) float64 {
 
 	// handle sigwinch and sigint
 	sigs := make(chan os.Signal)
-	signal.Notify(sigs, syscall.SIGWINCH, syscall.SIGINT)
+	signal.Notify(sigs, syscall.SIGWINCH)
+
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT)
+	defer stop()
 
 	go func() {
 		for dim := range intf.dims {
@@ -373,14 +375,18 @@ mainloop:
 		case <-ctx.Done():
 			break mainloop
 		case sig := <-sigs:
-			switch sig {
-			case syscall.SIGWINCH:
-				w, h, _ := terminal.GetSize(0)
-				// send new dimensions to renderer
-				intf.dims <- [2]int{w, h * 2}
-			case syscall.SIGINT:
-				break mainloop
+			if sig != syscall.SIGWINCH {
+				// somehow we got a signal we weren't expecting.  not sure what to do
+				// with this. :)
+				break
 			}
+
+			w, h, err := terminal.GetSize(0)
+			if err != nil {
+				cancel()
+			}
+			// send new dimensions to renderer
+			intf.dims <- [2]int{w, h * 2}
 		}
 	}
 
