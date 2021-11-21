@@ -43,18 +43,18 @@ type Point struct {
 
 type ColorMapFunc func(float64, float64, float64) color.RGBA
 type Interferer struct {
-	Point         []Point // map of points where ripple originates.
-	ColorMapFunc          // function to call when mapping a cell's value to a color.
-	*bytes.Buffer         // buffer to store grid that we display
-	GoRoutines    int     // number of goroutines to spawn.
-	GridMutex     sync.Mutex
-	Grid          []float64 // resulting grid
-	Width         int       // width of display grid
-	Height        int       // height of display grid
-	Image         *image.RGBA
-	dims          chan [2]int
-	done          chan [2]float64
-	colorbuf      []byte
+	Point        []Point // map of points where ripple originates.
+	ColorMapFunc         // function to call when mapping a cell's value to a color.
+	GoRoutines   int     // number of goroutines to spawn.
+	GridMutex    sync.Mutex
+	Grid         []float64 // resulting grid
+	Width        int       // width of display grid
+	Height       int       // height of display grid
+	Image        *image.RGBA
+	dims         chan [2]int
+	done         chan [2]float64
+	colorbuf     []byte
+	buf          bytes.Buffer
 }
 
 func (intf *Interferer) SetDimensions(w, h int) error {
@@ -100,7 +100,6 @@ func New(points int, w int, h int, cmapname string, goroutines int) (*Interferer
 	rc := &Interferer{
 		ColorMapFunc: colmap[cmapname],
 		Point:        generatePoints(points),
-		Buffer:       bytes.NewBuffer([]byte{}),
 		GoRoutines:   goroutines,
 		dims:         make(chan [2]int),
 		colorbuf:     make([]byte, 256),
@@ -294,7 +293,7 @@ func (intf *Interferer) Draw(gmin, gmax float64) error {
 		}
 	}
 
-	if err := asciiart.Encode(os.Stdout, intf.Image); err != nil {
+	if err := asciiart.EncodeBuffer(os.Stdout, intf.Image, &intf.buf); err != nil {
 		return err
 	}
 	return nil
